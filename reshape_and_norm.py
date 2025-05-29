@@ -91,8 +91,14 @@ def normalize(input_path, output_path):
 
     normalized_ds.to_netcdf(output_path / "cerra_2019_2021_norm.nc")
 
+    #Menschenlesbar
     with open(output_path / "mean_dev.json", 'w') as f:
         json.dump({v: {'mean': means[v], 'std': stds[v]} for v in variables}, f, indent=4)
+    
+    #irgendwie wohl besser/effizienter für Computer
+    np.savez(output_path / "normalize_mean.npz", **{k: np.array([v]) for k, v in means.items()})
+    np.savez(output_path / "normalize_std.npz", **{k: np.array([v]) for k, v in stds.items()})
+
 
     print("Normalisierung abgeschlossen")
 
