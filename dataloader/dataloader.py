@@ -1,4 +1,5 @@
 from lightning import LightningDataModule
+import pytorch_lightning as pl
 import torch
 import numpy as np
 import os
@@ -31,7 +32,7 @@ def collate_fn_test(
     return inp, out, variables
 
 
-class DLWCDataModule(LightningDataModule):
+class DLWCDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
