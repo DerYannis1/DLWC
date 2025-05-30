@@ -84,20 +84,20 @@ class DLWCDataModule(LightningDataModule):
             )
 
 
-def train_dataloader(self):
-    return DataLoader(
-        self.data_train,
-        batch_size=self.hparams.batch_size,
-        shuffle=True,
-        collate_fn=collate_fn_train,
-        num_workers=4,
-    )
+    def train_dataloader(self):
+        return DataLoader(
+            self.data_train,
+            batch_size=self.hparams.batch_size,
+            shuffle=True,
+            collate_fn=collate_fn_train,
+            num_workers=4,
+        )
 
-def val_dataloader(self):
-    return DataLoader(
-        self.data_test,
-        batch_size=self.hparams.val_batch_size,
-        shuffle=False,
-        collate_fn=collate_fn_val,
-        num_workers=4,
-    )
+    def val_dataloader(self):
+        return DataLoader(
+            self.data_test,
+            batch_size=self.hparams.val_batch_size,
+            shuffle=False,
+            collate_fn=collate_fn_val,
+            num_workers=4,
+        )
