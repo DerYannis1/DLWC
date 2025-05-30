@@ -163,6 +163,9 @@ def main():
     normalize(temp_reshaped_dir, Path(args.save_dir))
     split_and_move_files(temp_reshaped_dir, Path(args.save_dir))
 
+    if temp_reshaped_dir.exists():
+        shutil.rmtree(temp_reshaped_dir)
+        print(f"Temporäres Verzeichnis {temp_reshaped_dir} entfernt.")
 
 if __name__ == "__main__":
     main()
