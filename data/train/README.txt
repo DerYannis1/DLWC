@@ -1,0 +1,1 @@
+Hier werden die Trainings-Daten gespeichert, wenn man "reshape_and_norm.py" ausführt.
