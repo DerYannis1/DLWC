@@ -5,9 +5,10 @@ import os
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+import shutil
 
 
-def reshape(input_dir, output_dir):
+def reshape(input_dir, temp_output_dir):
     input_files = sorted(Path(input_dir).glob("*.nc"))
 
     variable_map = {
@@ -19,8 +20,8 @@ def reshape(input_dir, output_dir):
     }
 
     target_vars = list(variable_map.values())
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    temp_output_dir = Path(temp_output_dir)
+    temp_output_dir.mkdir(parents=True, exist_ok=True)
 
     for file in tqdm(input_files, desc="Reshaping files"):
         ds = xr.open_dataset(file)
@@ -49,7 +50,7 @@ def reshape(input_dir, output_dir):
         coords = {k: ds.coords[k] for k in ['time', 'lat', 'lon'] if k in ds.coords}
         new_ds = xr.Dataset(new_vars, coords=coords, attrs=ds.attrs)
 
-        output_path = output_dir / file.name.replace(".nc", "_reshaped.nc")
+        output_path = temp_output_dir / file.name.replace(".nc", "_reshaped.nc")
         new_ds.to_netcdf(output_path)
         print(f"Gespeichert: {output_path}")
 
@@ -101,8 +102,8 @@ def normalize(input_path, output_path):
     normalize_differences(combined_ds, output_path)
 
 
-def normalize_differences(dataset, output_path):
-    """Erzeugt normalize_diff_std_3.npz für 3h Differenzen."""
+def normalize_differences(dataset, output_path, epsilon=1e-6):
+    """Erzeugt normalize_diff_std_3.npz mit Fallback bei std=0."""
     diff_stds = {}
     for var in dataset.data_vars:
         data = dataset[var]
@@ -110,26 +111,57 @@ def normalize_differences(dataset, output_path):
             continue
         diff = data.isel(time=slice(1, None)) - data.isel(time=slice(0, -1))
         std = diff.std().item()
-        diff_stds[var] = std
-        print(f"{var} (Diff 3h): std={std}")
+
+        if std == 0.0:
+            print(f"std von '{var}' war 0 - setze Fallback auf {epsilon}")
+        diff_stds[var] = max(std, epsilon)
+
+        print(f"{var} (Diff 3h): std={diff_stds[var]:.6f}")
 
     np.savez(output_path / "normalize_diff_std_3.npz", **{k: np.array([v]) for k, v in diff_stds.items()})
-    print("Differenz-Normalisierung abgeschlossen")
+    print("\n normalize_diff_std_3.npz erfolgreich erstellt.")
+
+
+
+def split_and_move_files(reshaped_dir, final_output_dir, train_ratio=0.9):
+    reshaped_dir = Path(reshaped_dir)
+    final_output_dir = Path(final_output_dir)
+    train_dir = final_output_dir / "train"
+    test_dir = final_output_dir / "test"
+
+    train_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
+
+    all_files = sorted(reshaped_dir.glob("*.nc"))
+    num_train = int(len(all_files) * train_ratio)
+
+    train_files = all_files[:num_train]
+    test_files = all_files[num_train:]
+
+    for f in train_files:
+        shutil.move(str(f), train_dir / f.name)
+    for f in test_files:
+        shutil.move(str(f), test_dir / f.name)
+
+    print(f"Train: {len(train_files)} Dateien")
+    print(f"Test: {len(test_files)} Dateien")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Reshape and normalize NetCDF files.')
     parser.add_argument('--root_dir', type=str, required=True, help='Root directory containing input data.')
-    parser.add_argument('--save_dir', type=str, required=True, help='Directory to save normalized data.')
-    parser.add_argument('--reshape_dir', type=str, required=True, help='Directory to save reshaped files.')
+    parser.add_argument('--save_dir', type=str, required=True, help='Final directory for normalized + split data.')
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    reshape(args.root_dir, args.reshape_dir)
-    normalize(args.reshape_dir, args.save_dir)
+    temp_reshaped_dir = Path(args.save_dir) / "_temp_reshaped"
+    reshape(args.root_dir, temp_reshaped_dir)
+
+    normalize(temp_reshaped_dir, Path(args.save_dir))
+    split_and_move_files(temp_reshaped_dir, Path(args.save_dir))
 
 
 if __name__ == "__main__":

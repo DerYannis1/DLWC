@@ -5,7 +5,7 @@ import os
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import transforms
 from typing import Optional, Sequence, Tuple
-from dataset import TrainDataset, TestDataset
+from dataloader.dataset import TrainDataset, TestDataset
 
 
 def collate_fn_train(
@@ -21,7 +21,7 @@ def collate_fn_train(
     return inp, out, out_transform_mean, out_transform_std, interval, variables
 
 
-def collate_fn_val(
+def collate_fn_test(
     batch,
 ) -> Tuple[torch.Tensor, torch.Tensor, Sequence[str]]:
 
@@ -39,7 +39,7 @@ class DLWCDataModule(LightningDataModule):
         variables,
         list_train_intervals,
         batch_size=5,
-        val_batch_size=5,
+        test_batch_size=5,
     ):
         super().__init__()
 
@@ -93,11 +93,11 @@ class DLWCDataModule(LightningDataModule):
             num_workers=4,
         )
 
-    def val_dataloader(self):
+    def test_dataloader(self):
         return DataLoader(
             self.data_test,
-            batch_size=self.hparams.val_batch_size,
+            batch_size=self.hparams.test_batch_size,
             shuffle=False,
-            collate_fn=collate_fn_val,
+            collate_fn=collate_fn_test,
             num_workers=4,
         )
