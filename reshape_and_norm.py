@@ -1,7 +1,6 @@
 import xarray as xr
 import numpy as np
 import json
-import glob
 import os
 import argparse
 from pathlib import Path
@@ -91,16 +90,31 @@ def normalize(input_path, output_path):
 
     normalized_ds.to_netcdf(output_path / "cerra_2019_2021_norm.nc")
 
-    #Menschenlesbar
     with open(output_path / "mean_dev.json", 'w') as f:
         json.dump({v: {'mean': means[v], 'std': stds[v]} for v in variables}, f, indent=4)
-    
-    #irgendwie wohl besser/effizienter für Computer
+
     np.savez(output_path / "normalize_mean.npz", **{k: np.array([v]) for k, v in means.items()})
     np.savez(output_path / "normalize_std.npz", **{k: np.array([v]) for k, v in stds.items()})
 
-
     print("Normalisierung abgeschlossen")
+
+    normalize_differences(combined_ds, output_path)
+
+
+def normalize_differences(dataset, output_path):
+    """Erzeugt normalize_diff_std_3.npz für 3h Differenzen."""
+    diff_stds = {}
+    for var in dataset.data_vars:
+        data = dataset[var]
+        if "time" not in data.dims:
+            continue
+        diff = data.isel(time=slice(1, None)) - data.isel(time=slice(0, -1))
+        std = diff.std().item()
+        diff_stds[var] = std
+        print(f"{var} (Diff 3h): std={std}")
+
+    np.savez(output_path / "normalize_diff_std_3.npz", **{k: np.array([v]) for k, v in diff_stds.items()})
+    print("Differenz-Normalisierung abgeschlossen")
 
 
 def parse_args():
