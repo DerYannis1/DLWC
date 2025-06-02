@@ -172,3 +172,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+/bin
+lib64
+pyvenv.cfg
+
+data/test/cerra_*
+data/train/cerra_*
+data/cerra_*
+data/normalize_*
+data/mean*
