@@ -43,12 +43,12 @@ class TrainDataset(Dataset):
         inp_data = np.stack(data_list_in, axis=0)  # V x H x W
         out_data = np.stack(data_list_out, axis=0)
 
-        diff = torch.from_numpy(out_data - inp_data)
         inp_tensor = torch.from_numpy(inp_data)
+        out_tensor = torch.from_numpy(out_data)
 
         return (
             self.inp_transform(inp_tensor),
-            self.out_transform(diff),
+            self.out_transform(out_tensor),
             torch.from_numpy(self.out_transform.mean),
             torch.from_numpy(self.out_transform.std),
             torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
@@ -59,14 +59,16 @@ class TrainDataset(Dataset):
 class TestDataset(Dataset):
     def __init__(
         self,
-        root_dir: str,
+        root_dir,
         variables: List[str],
-        transform,
+        inp_transform,
+        out_transform,
     ):
         super().__init__()
         self.root_dir = root_dir
         self.variables = variables
-        self.transform = transform
+        self.inp_transform = inp_transform
+        self.out_transform = out_transform
         self.lead_time = 3
 
         self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
@@ -95,9 +97,9 @@ class TestDataset(Dataset):
 
         return (
             self.inp_transform(inp_tensor),
-            self.inp_transform(out_tensor),  # <--- CHANGE HERE
-            torch.from_numpy(self.inp_transform.mean),
-            torch.from_numpy(self.inp_transform.std),
+            self.out_transform(out_tensor),
+            torch.from_numpy(self.out_transform.mean),
+            torch.from_numpy(self.out_transform.std),
             torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
             self.variables,
         )

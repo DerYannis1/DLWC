@@ -52,10 +52,9 @@ class DLWCDataModule(pl.LightningDataModule):
 
         self.transforms = transforms.Normalize(normalize_mean, normalize_std)
 
+        # Use the same normalization for output as for input (absolute values)
         out_transforms = {}
-        normalize_diff_std = dict(np.load(os.path.join(root_dir, "normalize_diff_std_3.npz")))
-        normalize_diff_std = np.concatenate([normalize_diff_std[v] for v in variables], axis=0)
-        out_transforms[3] = transforms.Normalize(np.zeros_like(normalize_diff_std), normalize_diff_std)
+        out_transforms[3] = transforms.Normalize(normalize_mean, normalize_std)
         self.out_transforms = out_transforms
 
         self.data_train: Optional[Dataset] = None
@@ -81,7 +80,8 @@ class DLWCDataModule(pl.LightningDataModule):
             self.data_test = TestDataset(
                 root_dir=os.path.join(self.hparams.root_dir, 'test'),
                 variables=self.hparams.variables,
-                transform=self.transforms,
+                inp_transform=self.transforms,
+                out_transform=self.out_transforms[3],
             )
 
 

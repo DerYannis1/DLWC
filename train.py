@@ -26,10 +26,10 @@ if __name__ == "__main__":
     model = SimpleWeatherCNN(in_channels=in_channels, out_channels=out_channels)
 
     trainer = pl.Trainer(
-        max_epochs=20,
+        max_epochs=50,
         accelerator="auto",
         devices=1,
-        log_every_n_steps=10,
+        log_every_n_steps=100,
     )
 
     trainer.fit(model, datamodule=dm)
