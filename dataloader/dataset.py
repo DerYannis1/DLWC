@@ -87,11 +87,17 @@ class TestDataset(Dataset):
             data_list_in = [ds[v][time_idx] for v in self.variables]
             data_list_out = [ds[v][time_idx + 1] for v in self.variables]
 
-        inp_tensor = torch.from_numpy(np.stack(data_list_in, axis=0))
-        out_tensor = torch.from_numpy(np.stack(data_list_out, axis=0))
+        inp_data = np.stack(data_list_in, axis=0)  # V x H x W
+        out_data = np.stack(data_list_out, axis=0)
+
+        inp_tensor = torch.from_numpy(inp_data)
+        out_tensor = torch.from_numpy(out_data)
 
         return (
-            self.transform(inp_tensor),
-            self.transform(out_tensor),
+            self.inp_transform(inp_tensor),
+            self.inp_transform(out_tensor),  # <--- CHANGE HERE
+            torch.from_numpy(self.inp_transform.mean),
+            torch.from_numpy(self.inp_transform.std),
+            torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
             self.variables,
         )

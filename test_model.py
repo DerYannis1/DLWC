@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from model import SimpleWeatherCNN
 
 # === Einstellungen ===
-model_ckpt = "lightning_logs/version_0/checkpoints/epoch=9-step=12110.ckpt"  # Passe ggf. an
+model_ckpt = "./lightning_logs/version_1/checkpoints/epoch=15-step=19376.ckpt"  # Passe ggf. an
 input_nc = "data/test/cerra_8_2019_reshaped.nc"                # Eingabedatei
 time_idx = 0                                                   # Zeitschritt
-device = "cpu"                                                 # oder "cuda" falls verfügbar
+device = "cuda"                                                 # oder "cuda" falls verfügbar
 
 # === Variablenliste wie im Training ===
 variables = [
@@ -56,7 +56,18 @@ if "time" in ds.dims and ds.dims["time"] > time_idx + 1:
 else:
     temp_actual = np.full_like(temp_pred, np.nan)  # Fallback, falls nicht vorhanden
 
-# === Plot ===
+# === Loss-Berechnung ===
+if not np.isnan(temp_actual).all():  # Check if actual values are available
+    loss_fn = torch.nn.MSELoss()
+    temp_actual_tensor = torch.tensor(temp_actual, dtype=torch.float32).to(device)
+    temp_pred_tensor = torch.tensor(temp_pred, dtype=torch.float32).to(device)
+    loss = loss_fn(temp_pred_tensor, temp_actual_tensor)
+    print(f"Loss (MSE) between prediction and actual: {loss.item()}")
+else:
+    loss = None
+    print("Actual values are not available for loss computation.")
+
+# === Plot mit Loss ===
 fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 im0 = axs[0].imshow(temp_input, cmap="coolwarm")
 axs[0].set_title(f"Eingabe t={time_idx}\nt_100000")
@@ -73,6 +84,10 @@ plt.colorbar(im2, ax=axs[2], fraction=0.046)
 for ax in axs:
     ax.axis("off")
 
+# Add loss to the plot title if available
+if loss is not None:
+    fig.suptitle(f"Loss (MSE): {loss.item():.4f}", fontsize=16)
+
 plt.tight_layout()
-plt.savefig("temp_prediction_comparison.png")
+plt.savefig("temp_prediction_comparison_with_loss.png")
 plt.show()
