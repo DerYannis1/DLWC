@@ -44,7 +44,8 @@ class DLWCDataModule(pl.LightningDataModule):
     ):
         super().__init__()
 
-        self.save_hyperparameters(logger=False)
+        #self.save_hyperparameters(logger=False)
+        self.save_hyperparameters()
         normalize_mean = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
         normalize_mean = np.concatenate([normalize_mean[v] for v in variables], axis=0)
         normalize_std = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
@@ -83,7 +84,8 @@ class DLWCDataModule(pl.LightningDataModule):
                 inp_transform=self.transforms,
                 out_transform=self.out_transforms[3],
             )
-
+            # Use test set as validation set for now
+            self.data_val = self.data_test
 
     def train_dataloader(self):
         return DataLoader(
@@ -91,6 +93,15 @@ class DLWCDataModule(pl.LightningDataModule):
             batch_size=self.hparams.batch_size,
             shuffle=True,
             collate_fn=collate_fn_train,
+            num_workers=4,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.data_val,
+            batch_size=self.hparams.test_batch_size,
+            shuffle=False,
+            collate_fn=collate_fn_test,
             num_workers=4,
         )
 

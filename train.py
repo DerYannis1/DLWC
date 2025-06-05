@@ -18,8 +18,8 @@ if __name__ == "__main__":
         root_dir=root_dir,
         variables=variables,
         list_train_intervals=[3],
-        batch_size=2,
-        test_batch_size=2,
+        batch_size=6,
+        test_batch_size=3,
     )
     #dm.setup()
 
@@ -29,7 +29,8 @@ if __name__ == "__main__":
         max_epochs=50,
         accelerator="auto",
         devices=1,
-        log_every_n_steps=100,
+        log_every_n_steps=10,
     )
 
     trainer.fit(model, datamodule=dm)
+    trainer.validate(model, datamodule=dm)

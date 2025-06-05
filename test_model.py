@@ -14,7 +14,7 @@ def plot_variable(var_tensor, title, vmin=None, vmax=None):
 
 def main():
     # --- Settings ---
-    checkpoint_path = "lightning_logs/version_2/checkpoints/epoch=49-step=60550.ckpt"  # Adjust as needed
+    checkpoint_path = "lightning_logs/version_0/checkpoints/epoch=49-step=30300.ckpt"  # Adjust as needed
     root_dir = "data"
     variables = [
         'z_20000', 'z_30000', 'z_50000', 'z_70000', 'z_85000', 'z_92500', 'z_100000',
@@ -24,7 +24,6 @@ def main():
         'r_20000', 'r_30000', 'r_50000', 'r_70000', 'r_85000', 'r_92500', 'r_100000'
     ]
     var_name = "t_100000"
-    time_idx = 0  # Change to desired time index
 
     # --- Load DataModule and Model ---
     dm = DLWCDataModule(
@@ -51,25 +50,39 @@ def main():
     # Find index of t_100000
     var_idx = variables.index(var_name)
 
+    # --- Load normalization stats for t_100000 ---
+    stats_mean = np.load("./data/normalize_mean.npz")
+    stats_std = np.load("./data/normalize_std.npz")
+    mean = stats_mean['t_100000']
+    std = stats_std['t_100000']
+
     # --- Predict ---
     with torch.no_grad():
         pred = model(inp)
 
+    # --- Convert from normalized to actual values ---
+    def to_actual(norm_tensor):
+        # norm_tensor: (H, W) or (C, H, W)
+        return norm_tensor * std + mean
+
     # --- Plot t_100000 at time t ---
     t0_img = inp[0, var_idx].cpu().numpy()
+    t0_img_actual = to_actual(t0_img)
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
-    plot_variable(t0_img, f"{var_name} at time t")
+    plot_variable(t0_img_actual, f"{var_name} at time t (K)")
 
     # --- Plot predicted t_100000 at time t+1 ---
     pred_img = pred[0, var_idx].cpu().numpy()
+    pred_img_actual = to_actual(pred_img)
     plt.subplot(1, 3, 2)
-    plot_variable(pred_img, f"Predicted {var_name} at t+1")
+    plot_variable(pred_img_actual, f"Predicted {var_name} at t+1 (K)")
 
     # --- Plot actual t_100000 at time t+1 ---
     out_img = out[0, var_idx].cpu().numpy()
+    out_img_actual = to_actual(out_img)
     plt.subplot(1, 3, 3)
-    plot_variable(out_img, f"Actual {var_name} at t+1")
+    plot_variable(out_img_actual, f"Actual {var_name} at t+1 (K)")
 
     plt.tight_layout()
     plt.show()
@@ -77,21 +90,22 @@ def main():
 
     # --- Plot loss curve ---
     # Assumes Lightning logs are in CSV format
-    log_path = "lightning_logs/version_2/metrics.csv"
+    log_path = "lightning_logs/version_0/metrics.csv"
     if os.path.exists(log_path):
         import pandas as pd
         df = pd.read_csv(log_path)
+        plt.figure()
         if "train_loss" in df.columns:
-            plt.figure()
-            plt.plot(df["step"], df["train_loss"], label="Train Loss")
-            plt.xlabel("Step")
-            plt.ylabel("Loss")
-            plt.title("Training Loss Curve")
-            plt.legend()
-            plt.show()
-            plt.savefig("train_loss_curve.png")
-        else:
-            print("train_loss not found in metrics.csv")
+            plt.plot(df["step"], df["train_loss"], label="Train Loss", color="blue")
+        if "val_loss" in df.columns:
+            plt.plot(df["step"], df["val_loss"], label="Validation Loss", color="orange")
+        plt.xlabel("Step")
+        plt.ylabel("Loss")
+        plt.title("Training and Validation Loss Curve")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        plt.savefig("train_val_loss_curve.png")
     else:
         print(f"Log file {log_path} not found.")
 
