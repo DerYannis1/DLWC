@@ -1,115 +1,84 @@
-from lightning import LightningDataModule
-import pytorch_lightning as pl
-import torch
-import numpy as np
+# dataloader.py
+
 import os
-from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import transforms
-from typing import Optional, Sequence, Tuple
-from dataloader.dataset import TrainDataset, TestDataset
-
-
-def collate_fn_train(
-    batch,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Sequence[str]]:
-
-    inp = torch.stack([item[0] for item in batch])               # [B, V, H, W]
-    out = torch.stack([item[1] for item in batch])               # [B, V, H, W]
-    out_transform_mean = torch.stack([item[2] for item in batch])# [B, V]
-    out_transform_std = torch.stack([item[3] for item in batch]) # [B, V]
-    interval = torch.stack([item[4] for item in batch])          # [B, 1]
-    variables = batch[0][5]                                      # List[str], gleich für alle
-    return inp, out, out_transform_mean, out_transform_std, interval, variables
-
-
-def collate_fn_test(
-    batch,
-) -> Tuple[torch.Tensor, torch.Tensor, Sequence[str]]:
-
-    inp = torch.stack([item[0] for item in batch])   # [B, V, H, W]
-    out = torch.stack([item[1] for item in batch])   # [B, V, H, W]
-    variables = batch[0][2]                          # List[str]
-    return inp, out, variables
-
+import numpy as np
+from typing import List, Optional
+import pytorch_lightning as pl
+from torch.utils.data import DataLoader
+from torchvision.transforms import Normalize
+from dataset import TrainDataset, TestDataset
 
 class DLWCDataModule(pl.LightningDataModule):
-
     def __init__(
         self,
-        root_dir,
-        variables,
-        list_train_intervals,
-        batch_size=5,
-        test_batch_size=5,
+        root_dir: str,
+        variables: List[str],
+        batch_size: int = 8,
+        test_batch_size: int = 8,
+        num_workers: int = 4,
     ):
         super().__init__()
+        self.root_dir = root_dir
+        self.variables = variables
+        self.batch_size = batch_size
+        self.test_batch_size = test_batch_size
+        self.num_workers = num_workers
 
-        #self.save_hyperparameters(logger=False)
-        self.save_hyperparameters()
-        normalize_mean = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
-        normalize_mean = np.concatenate([normalize_mean[v] for v in variables], axis=0)
-        normalize_std = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
-        normalize_std = np.concatenate([normalize_std[v] for v in variables], axis=0)
+        # load per‐channel mean/std
+        means = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
+        stds  = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
+        mean = np.concatenate([means[v] for v in variables], axis=0).tolist()
+        std  = np.concatenate([stds[v]  for v in variables], axis=0).tolist()
 
-        self.transforms = transforms.Normalize(normalize_mean, normalize_std)
+        # Only Normalize (data is already 16×16)
+        self.inp_transform = Normalize(mean, std)
+        self.out_transform = Normalize(mean, std)
 
-        # Use the same normalization for output as for input (absolute values)
-        out_transforms = {}
-        out_transforms[3] = transforms.Normalize(normalize_mean, normalize_std)
-        self.out_transforms = out_transforms
+        self.train_ds: Optional[TrainDataset] = None
+        self.val_ds:   Optional[TestDataset]  = None
+        self.test_ds:  Optional[TestDataset]  = None
 
-        self.data_train: Optional[Dataset] = None
-        self.data_test: Optional[Dataset] = None
-
-    def get_lat_lon(self):
-        lat = np.load(os.path.join(self.hparams.root_dir, "lat.npy"))
-        lon = np.load(os.path.join(self.hparams.root_dir, "lon.npy"))
-        return lat, lon
-    
-    def get_transforms(self):
-        return self.transforms, self.out_transforms[3]
-
-    def setup(self, stage: Optional[str] = None):        
-        if not self.data_train and not self.data_test:
-            self.data_train = TrainDataset(
-                root_dir=os.path.join(self.hparams.root_dir, 'train'),
-                variables=self.hparams.variables,
-                inp_transform=self.transforms,
-                out_transform=self.out_transforms[3],
+    def setup(self, stage: Optional[str] = None):
+        if self.train_ds is None:
+            self.train_ds = TrainDataset(
+                root_dir=os.path.join(self.root_dir, "train"),
+                variables=self.variables,
+                inp_transform=self.inp_transform,
+                out_transform=self.out_transform,
             )
-
-            self.data_test = TestDataset(
-                root_dir=os.path.join(self.hparams.root_dir, 'test'),
-                variables=self.hparams.variables,
-                inp_transform=self.transforms,
-                out_transform=self.out_transforms[3],
+            self.val_ds = TestDataset(
+                root_dir=os.path.join(self.root_dir, "test"),
+                variables=self.variables,
+                inp_transform=self.inp_transform,
+                out_transform=self.out_transform,
             )
-            # Use test set as validation set for now
-            self.data_val = self.data_test
+            self.test_ds = self.val_ds
 
     def train_dataloader(self):
         return DataLoader(
-            self.data_train,
-            batch_size=self.hparams.batch_size,
+            self.train_ds,
+            batch_size=self.batch_size,
             shuffle=True,
-            collate_fn=collate_fn_train,
-            num_workers=4,
+            num_workers=self.num_workers,
+            collate_fn=lambda b: (
+                torch.stack([x[0] for x in b]),
+                torch.stack([x[1] for x in b]),
+                b[0][2],
+            ),
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.data_val,
-            batch_size=self.hparams.test_batch_size,
+            self.val_ds,
+            batch_size=self.test_batch_size,
             shuffle=False,
-            collate_fn=collate_fn_test,
-            num_workers=4,
+            num_workers=self.num_workers,
+            collate_fn=lambda b: (
+                torch.stack([x[0] for x in b]),
+                torch.stack([x[1] for x in b]),
+                b[0][2],
+            ),
         )
 
     def test_dataloader(self):
-        return DataLoader(
-            self.data_test,
-            batch_size=self.hparams.test_batch_size,
-            shuffle=False,
-            collate_fn=collate_fn_test,
-            num_workers=4,
-        )
+        return self.val_dataloader()

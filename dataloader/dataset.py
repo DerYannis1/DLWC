@@ -1,105 +1,59 @@
+# dataset.py
+
 import os
 from glob import glob
-from typing import List
-import torch
-from torch.utils.data import Dataset
+from typing import List, Tuple
 import netCDF4
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
-
-class TrainDataset(Dataset):
+class BaseNCDataset(Dataset):
+    """
+    Shared logic for Train/Test: loads sequences of length 2 in time.
+    Returns (inp, out, variables).
+    """
     def __init__(
         self,
-        root_dir,
+        root_dir: str,
         variables: List[str],
         inp_transform,
         out_transform,
     ):
-        super().__init__()
-        self.root_dir = root_dir
+        self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
         self.variables = variables
         self.inp_transform = inp_transform
         self.out_transform = out_transform
 
-        self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
-
-        # Für jeden Monat: öffne Datei und speichere Anzahl Zeitpunkte
+        # build flat list of (file, time_idx) pairs, excluding last time
         self.time_index = []
         for f in self.files:
             ds = netCDF4.Dataset(f)
-            num_times = len(ds.dimensions["time"])
-            self.time_index.extend([(f, i) for i in range(num_times - 1)])  # -1: letzter Punkt hat kein Folgefeld
+            t_dim = len(ds.dimensions["time"])
             ds.close()
+            self.time_index += [(f, i) for i in range(t_dim - 1)]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.time_index)
 
-    def __getitem__(self, index):
-        file_path, time_idx = self.time_index[index]
-        with netCDF4.Dataset(file_path) as ds:
-            data_list_in = [ds[v][time_idx] for v in self.variables]
-            data_list_out = [ds[v][time_idx + 1] for v in self.variables]
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, List[str]]:
+        fpath, t = self.time_index[idx]
+        with netCDF4.Dataset(fpath) as ds:
+            # read all variables at t and t+1
+            arr_in = np.stack([ds[v][t]   for v in self.variables], axis=0)
+            arr_out = np.stack([ds[v][t+1] for v in self.variables], axis=0)
 
-        inp_data = np.stack(data_list_in, axis=0)  # V x H x W
-        out_data = np.stack(data_list_out, axis=0)
-
-        inp_tensor = torch.from_numpy(inp_data)
-        out_tensor = torch.from_numpy(out_data)
+        inp = torch.from_numpy(arr_in.astype(np.float32))
+        out = torch.from_numpy(arr_out.astype(np.float32))
 
         return (
-            self.inp_transform(inp_tensor),
-            self.out_transform(out_tensor),
-            torch.from_numpy(self.out_transform.mean),
-            torch.from_numpy(self.out_transform.std),
-            torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
+            self.inp_transform(inp),
+            self.out_transform(out),
             self.variables,
         )
 
+class TrainDataset(BaseNCDataset):
+    pass
 
-class TestDataset(Dataset):
-    def __init__(
-        self,
-        root_dir,
-        variables: List[str],
-        inp_transform,
-        out_transform,
-    ):
-        super().__init__()
-        self.root_dir = root_dir
-        self.variables = variables
-        self.inp_transform = inp_transform
-        self.out_transform = out_transform
-        self.lead_time = 3
-
-        self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
-
-        self.time_index = []
-        for f in self.files:
-            ds = netCDF4.Dataset(f)
-            num_times = len(ds.dimensions["time"])
-            self.time_index.extend([(f, i) for i in range(num_times - 1)])  # Nur Paare mit Zielpunkt
-            ds.close()
-
-    def __len__(self):
-        return len(self.time_index)
-
-    def __getitem__(self, index):
-        file_path, time_idx = self.time_index[index]
-        with netCDF4.Dataset(file_path) as ds:
-            data_list_in = [ds[v][time_idx] for v in self.variables]
-            data_list_out = [ds[v][time_idx + 1] for v in self.variables]
-
-        inp_data = np.stack(data_list_in, axis=0)  # V x H x W
-        out_data = np.stack(data_list_out, axis=0)
-
-        inp_tensor = torch.from_numpy(inp_data)
-        out_tensor = torch.from_numpy(out_data)
-
-        return (
-            self.inp_transform(inp_tensor),
-            self.out_transform(out_tensor),
-            torch.from_numpy(self.out_transform.mean),
-            torch.from_numpy(self.out_transform.std),
-            torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
-            self.variables,
-        )
+class TestDataset(BaseNCDataset):
+    pass
