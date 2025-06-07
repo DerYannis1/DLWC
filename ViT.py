@@ -1,44 +1,44 @@
-# vit_model.py
-
-import math
+from timm.models.vision_transformer import VisionTransformer
+from pytorch_lightning import LightningModule
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
-from timm import create_model
+import math
+from typing import Optional, List
+from dataloader.dataloader import DLWCDataModule
 
 class WeatherViT(pl.LightningModule):
     def __init__(
         self,
-        in_channels: int,    # e.g. 35 (5 variables × 7 levels)
-        out_channels: int,   # same as in_channels
+        in_channels: int,
+        out_channels: int,
         lr: float = 1e-4,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        # ViT for 16×16 → 4×4 patches
-        self.vit = create_model(
-            "vit_base_patch4_16",
-            pretrained=False,
+        # Use direct instantiation to allow 4x4 patches
+        self.vit = VisionTransformer(
+            img_size=16,
+            patch_size=4,
             in_chans=in_channels,
-            num_classes=0,     # drop the head
+            num_classes=0,
+            embed_dim=768,
+            depth=12,
+            num_heads=12,
+            mlp_ratio=4,
+            qkv_bias=True,
+            norm_layer=torch.nn.LayerNorm,
         )
 
-        # compute patch grid size
-        num_patches = (16 // 4) ** 2  # 16
-        embed_dim   = self.vit.embed_dim
-        self.patch_res = int(math.sqrt(num_patches))  # 4
+        num_patches = (16 // 4) ** 2  # = 16
+        embed_dim = self.vit.embed_dim
+        self.patch_res = int(math.sqrt(num_patches))  # = 4
 
-        # a tiny decoder: 4×4 → 16×16
         self.decoder = nn.Sequential(
             nn.Conv2d(embed_dim, embed_dim, kernel_size=3, padding=1),
             nn.GELU(),
-            nn.ConvTranspose2d(
-                embed_dim,
-                embed_dim // 2,
-                kernel_size=4,
-                stride=4
-            ),
+            nn.ConvTranspose2d(embed_dim, embed_dim // 2, kernel_size=4, stride=4),
             nn.GELU(),
             nn.Conv2d(embed_dim // 2, out_channels, kernel_size=1),
         )
@@ -47,13 +47,10 @@ class WeatherViT(pl.LightningModule):
         self.lr = lr
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, C, 16, 16]
-        feats = self.vit.forward_features(x)
-        # feats: [B, num_patches+1, embed_dim]
-        tokens = feats[:, 1:, :]  # drop CLS token → [B,16,embed_dim]
+        feats = self.vit.forward_features(x)  # [B, 17, D]
+        tokens = feats[:, 1:, :]  # remove CLS → [B, 16, D]
         B, N, D = tokens.shape
-        h   = self.patch_res  # 4
-        tokens = tokens.transpose(1, 2).reshape(B, D, h, h)
+        tokens = tokens.transpose(1, 2).reshape(B, D, self.patch_res, self.patch_res)
         return self.decoder(tokens)
 
     def training_step(self, batch, batch_idx):

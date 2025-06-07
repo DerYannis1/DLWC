@@ -6,7 +6,8 @@ from typing import List, Optional
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from torchvision.transforms import Normalize
-from dataset import TrainDataset, TestDataset
+from dataloader.dataset import TrainDataset, TestDataset
+import torch
 
 class DLWCDataModule(pl.LightningDataModule):
     def __init__(

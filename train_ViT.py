@@ -2,8 +2,8 @@
 
 import torch
 from pytorch_lightning import Trainer
-from dataloader import DLWCDataModule
-from vit_model import WeatherViT
+from dataloader.dataloader import DLWCDataModule
+from ViT import WeatherViT
 
 if __name__ == "__main__":
     vars = [
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     ]
 
     dm = DLWCDataModule(
-        root_dir="path/to/normalized_and_split",
+        root_dir="data",
         variables=vars,
         batch_size=8,
         test_batch_size=8,
@@ -25,13 +25,14 @@ if __name__ == "__main__":
     dm.setup()
 
     model = WeatherViT(
-        in_channels=len(vars),
-        out_channels=len(vars),
+        in_channels=len(vars),  # 35
+        out_channels=len(vars),  # 35
         lr=3e-4,
     )
 
     trainer = Trainer(
-        gpus=1 if torch.cuda.is_available() else 0,
-        max_epochs=50,
+    accelerator="gpu" if torch.cuda.is_available() else "cpu",
+    devices=1,
+    max_epochs=50,
     )
     trainer.fit(model, dm)
