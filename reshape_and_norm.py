@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 import shutil
+import random
 
 
 def reshape(input_dir, temp_output_dir):
@@ -123,28 +124,31 @@ def normalize_differences(dataset, output_path, epsilon=1e-6):
 
 
 
-def split_and_move_files(reshaped_dir, final_output_dir, train_ratio=0.9):
+def split_and_move_files(reshaped_dir, final_output_dir, test_ratio=0.15):
     reshaped_dir = Path(reshaped_dir)
     final_output_dir = Path(final_output_dir)
     train_dir = final_output_dir / "train"
-    test_dir = final_output_dir / "test"
+    test_dir  = final_output_dir / "test"
 
     train_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
 
     all_files = sorted(reshaped_dir.glob("*.nc"))
-    num_train = int(len(all_files) * train_ratio)
+    n_total   = len(all_files)
+    n_test    = max(1, int(n_total * test_ratio))
 
-    train_files = all_files[:num_train]
-    test_files = all_files[num_train:]
+    # Randomly choose n_test distinct files
+    test_files = random.sample(all_files, n_test)
+    train_files = [f for f in all_files if f not in test_files]
 
     for f in train_files:
         shutil.move(str(f), train_dir / f.name)
     for f in test_files:
         shutil.move(str(f), test_dir / f.name)
 
-    print(f"Train: {len(train_files)} Dateien")
-    print(f"Test: {len(test_files)} Dateien")
+    print(f"Total files: {n_total}")
+    print(f"Train: {len(train_files)} files")
+    print(f"Test:  {len(test_files)} files")
 
 
 def parse_args():
