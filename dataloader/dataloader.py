@@ -99,5 +99,13 @@ class DLWCDataModule(LightningDataModule):
             collate_fn=collate_fn_test,
             num_workers=4,
         )
+    def val_dataloader(self):
+        return DataLoader(
+            self.data_test,
+            batch_size=self.hparams.test_batch_size,
+            shuffle=False,
+            collate_fn=collate_fn_test,
+            num_workers=4,
+        )
 
 

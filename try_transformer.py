@@ -39,7 +39,7 @@ dm = DLWCDataModule(
     variables=VARS,
     batch_size=1,
     test_batch_size=1,
-    num_workers=0,
+    list_train_intervals=[(0, 1000), (1000, 2000), (2000, 3000)],  # Example intervals
 )
 dm.setup()
 
