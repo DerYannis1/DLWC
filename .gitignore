@@ -182,3 +182,5 @@ data/train/cerra_*
 data/cerra_*
 data/normalize_*
 data/mean*
+lightning_logs/
+tb_logs/
