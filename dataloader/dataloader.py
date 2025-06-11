@@ -37,12 +37,7 @@ class DLWCDataModule(LightningDataModule):
         normalize_std = np.concatenate([normalize_std[v] for v in variables], axis=0)
 
         self.transforms = transforms.Normalize(normalize_mean, normalize_std)
-
-        normalize_diff_std = dict(np.load(os.path.join(root_dir, "normalize_diff_std_3.npz")))
-        normalize_diff_std = np.concatenate([normalize_diff_std[v] for v in variables], axis=0)
-        self.out_transforms = {
-            3: transforms.Normalize(np.zeros_like(normalize_diff_std), normalize_diff_std)
-        }
+        self.out_transforms  = self.transforms
 
         self.data_train: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
@@ -57,7 +52,7 @@ class DLWCDataModule(LightningDataModule):
         return lat, lon
 
     def get_transforms(self):
-        return self.transforms, self.out_transforms[3]
+        return self.transforms, self.out_transforms
 
     def setup(self, stage: Optional[str] = None):
         if not self.data_train and not self.data_test:
@@ -65,7 +60,7 @@ class DLWCDataModule(LightningDataModule):
                 root_dir=os.path.join(self.hparams.root_dir, 'train'),
                 variables=self.hparams.variables,
                 inp_transform=self.transforms,
-                out_transform=self.out_transforms[3],
+                out_transform=self.out_transforms,
             )
 
             self.data_test = TestDataset(

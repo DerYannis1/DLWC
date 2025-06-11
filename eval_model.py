@@ -1,123 +1,110 @@
 import os
+import glob
+import json
+import numpy as np
+import pandas as pd
 import torch
 import matplotlib.pyplot as plt
-import numpy as np
-from tensorboard.backend.event_processing import event_accumulator
 
-from weather_vit_seq2seq import WeatherViTSeq2Seq
+from Weather_ViT import SimpleWeatherTransformer
 from dataloader.dataloader import DLWCDataModule
+from train import LitWeatherForecast
 
-# -----------------------
-# Configuration
-# -----------------------
-CHECKPOINT_PATH = '/path/to/checkpoints/weather-vit-seq2seq.ckpt'
-LOG_DIR = '/path/to/tb_logs/weather_seq2seq'
-ROOT_DIR = '/path/to/data'
-VARIABLES = ['temperature', 'wind', 'humidity']
-BATCH_SIZE = 1
-INDEX = 1000000  # desired sample index
-IMG_SIZE = (16, 16)
-PATCH_SIZE = 4
-EMBED_DIM = 768
-DEPTH = 12
-NUM_HEADS = 12
-OUT_CHANNELS = 1
 
-# -----------------------
-# Load model
-# -----------------------
-model = WeatherViTSeq2Seq.load_from_checkpoint(
-    CHECKPOINT_PATH,
-    variables=VARIABLES,
-    img_size=IMG_SIZE,
-    patch_size=PATCH_SIZE,
-    embed_dim=EMBED_DIM,
-    depth=DEPTH,
-    num_heads=NUM_HEADS,
-    out_channels=OUT_CHANNELS,
-)
-model.eval()
+def plot_loss_curve():
+    metrics_path = "./lightning_logs/simple_weather_vit/version_7/metrics.csv"
+    if not os.path.exists(metrics_path):
+        raise FileNotFoundError(f"Metrics file not found at {metrics_path}")
+    metrics = pd.read_csv(metrics_path)
 
-# -----------------------
-# Prepare data
-# -----------------------
-data_module = DLWCDataModule(
-    root_dir=ROOT_DIR,
-    variables=VARIABLES,
-    list_train_intervals=[(0,1)],
-    batch_size=BATCH_SIZE,
-    test_batch_size=BATCH_SIZE,
-)
-data_module.setup()
+    train = metrics[metrics['train_loss_epoch'].notnull()]
+    val   = metrics[metrics['val_loss'].notnull()]
 
-test_loader = data_module.test_dataloader()
+    plt.figure()
+    plt.plot(train['epoch'], train['train_loss_epoch'], label='Train Loss')
+    plt.plot(val['epoch'],   val['val_loss'],         label='Val Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE Loss')
+    plt.title('Train & Validation Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("Loss_Curve.png")
+    plt.close()
 
-# Get specific sample by index
-all_samples = []
-for batch in test_loader:
-    inp, tgt, vars = batch
-    all_samples.append((inp, tgt))
-    if len(all_samples) * BATCH_SIZE > INDEX:
-        break
 
-# Compute batch and within-batch index
-i = INDEX // BATCH_SIZE
-j = INDEX % BATCH_SIZE
-src_img, tgt_img = all_samples[i]
-src = src_img[j:j+1]  # [1, V, H, W]
-tgt = tgt_img[j:j+1]
+def plot_weather_sample():
+    root_dir = './data'
+    variables = [
+        "t_100000","t_92500","t_85000","t_70000","t_50000","t_30000","t_20000",
+        "z_100000","z_92500","z_85000","z_70000","z_50000","z_30000","z_20000",
+        "u_100000","u_92500","u_85000","u_70000","u_50000","u_30000","u_20000",
+        "v_100000","v_92500","v_85000","v_70000","v_50000","v_30000","v_20000",
+        "r_100000","r_92500","r_85000","r_70000","r_50000","r_30000","r_20000",
+    ]
 
-# -----------------------
-# Predict
-# -----------------------
-pred = model(src, tgt)
+    # 1) Lade die Normalisierungsparameter
+    mean_npz = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
+    std_npz  = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
 
-# -----------------------
-# Plot input, prediction, target
-# -----------------------
-fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    # Baue arrays in der Variablen-Reihenfolge
+    means = np.array([mean_npz[v].item() for v in variables], dtype=float)
+    stds  = np.array([std_npz[v].item()  for v in variables], dtype=float)
 
-# For simplicity, plot first variable channel
-axes[0].imshow(src[0, 0].cpu().numpy(), cmap='viridis')
-axes[0].set_title('Input (t0) Variable 0')
-axes[0].axis('off')
+    # --- Modell laden wie gehabt ---
+    ckpt_path = "./lightning_logs/simple_weather_vit/version_8/checkpoints/simple-wx-vit-epoch=04-val_loss=0.0942.ckpt"
+    if not os.path.exists(ckpt_path):
+        raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
+    lit_model = LitWeatherForecast.load_from_checkpoint(ckpt_path)
+    model = lit_model.model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device).eval()
 
-axes[1].imshow(pred[0, 0].detach().cpu().numpy(), cmap='viridis')
-axes[1].set_title('Prediction (t1)')
-axes[1].axis('off')
+    # Testdaten
+    dm = DLWCDataModule(
+        root_dir=root_dir,
+        variables=variables,
+        list_train_intervals=[(0, 1)],
+        batch_size=1,
+        test_batch_size=1,
+    )
+    dm.setup()
+    batch = next(iter(dm.test_dataloader()))
+    x, y = batch[:2]
+    x = x.to(device);  y = y.to(device)
 
-axes[2].imshow(tgt[0, 0].cpu().numpy(), cmap='viridis')
-axes[2].set_title('Ground Truth (t1)')
-axes[2].axis('off')
+    # Inferenz
+    with torch.no_grad():
+        t_int  = torch.ones(x.size(0), device=device)
+        y_pred = model(x, variables, t_int)
 
-plt.tight_layout()
-plt.show()
+    # Extrahiere das t_100000-Feld
+    idx = variables.index("t_100000")
+    input_n = x[0,    idx].cpu().numpy()
+    pred_n  = y_pred[0, idx].cpu().numpy()
+    true_n  = y[0,    idx].cpu().numpy()
 
-# -----------------------
-# Plot training loss curve
-# -----------------------
-# Load TensorBoard events
-ea = event_accumulator.EventAccumulator(
-    LOG_DIR,
-    size_guidance={
-        event_accumulator.SCALARS: 0,
-    }
-)
-ea.Reload()
-train_events = ea.Scalars('train/loss')
-val_events = ea.Scalars('val/loss')
+    # 2) Inverse Normalize:  x_norm = (x - mean)/std  →  x = x_norm * std + mean
+    input_field = input_n * stds[idx] + means[idx]
+    pred_field  = pred_n  * stds[idx] + means[idx]
+    true_field  = true_n  * stds[idx] + means[idx]
 
-train_steps = [e.step for e in train_events]
-train_values = [e.value for e in train_events]
-val_steps = [e.step for e in val_events]
-val_values = [e.value for e in val_events]
+    # 3) Plotte alle drei in einer Abbildung
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    titles = ['Input t_100000 at t', 'Predicted t_100000 at t+1', 'Actual t_100000 at t+1']
+    fields = [input_field, pred_field, true_field]
 
-plt.figure(figsize=(6,4))
-plt.plot(train_steps, train_values, label='Train Loss')
-plt.plot(val_steps, val_values, label='Val Loss')
-plt.xlabel('Step')
-plt.ylabel('Loss')
-plt.title('Training Loss Curve')
-plt.legend()
-plt.tight_layout()
-plt.show()
+    for ax, field, title in zip(axes, fields, titles):
+        im = ax.imshow(field, cmap='coolwarm')
+        ax.set_title(title)
+        ax.axis('off')
+        fig.colorbar(im, ax=ax, shrink=0.7)
+
+    plt.tight_layout()
+    plt.savefig("Comparison_t_100000_denorm.png")
+    plt.close()
+
+
+if __name__ == "__main__":
+    plot_loss_curve()
+    plot_weather_sample()

@@ -10,7 +10,7 @@ class WeatherEmbeddingLite(nn.Module):
         self,
         variables,
         img_size,
-        patch_size=4,
+        patch_size=2,
         embed_dim=512,
     ):
         super().__init__()

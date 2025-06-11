@@ -40,19 +40,16 @@ class TrainDataset(Dataset):
             data_list_in = [ds[v][time_idx] for v in self.variables]
             data_list_out = [ds[v][time_idx + 1] for v in self.variables]
 
-        inp_data = np.stack(data_list_in, axis=0)  # V x H x W
-        out_data = np.stack(data_list_out, axis=0)
+        inp_data  = np.stack(data_list_in,  axis=0)  # V×H×W
+        out_data  = np.stack(data_list_out, axis=0)
 
-        diff = torch.from_numpy(out_data - inp_data)
-        inp_tensor = torch.from_numpy(inp_data)
+        # direkt absolute Werte normalisieren
+        inp_tensor = torch.from_numpy(inp_data).float()
+        out_tensor = torch.from_numpy(out_data).float()
 
         return (
             self.inp_transform(inp_tensor),
-            self.out_transform(diff),
-            torch.from_numpy(self.out_transform.mean),
-            torch.from_numpy(self.out_transform.std),
-            torch.tensor([0.3], dtype=torch.float32),  # 3h / 10.0
-            self.variables,
+            self.out_transform(out_tensor),
         )
 
 
@@ -93,5 +90,5 @@ class TestDataset(Dataset):
         return (
             self.transform(inp_tensor),
             self.transform(out_tensor),
-            self.variables,
+            self.variables
         )
