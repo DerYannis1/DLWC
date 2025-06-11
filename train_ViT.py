@@ -20,7 +20,8 @@ if __name__ == "__main__":
         variables=vars,
         batch_size=8,
         test_batch_size=8,
-        num_workers=4,
+        #num_workers=4,
+        list_train_intervals=[(0, 1000), (1000, 2000), (2000, 3000)],  # Example intervals
     )
     dm.setup()
 
