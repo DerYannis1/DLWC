@@ -8,28 +8,15 @@ from typing import Optional, Sequence, Tuple
 from dataloader.dataset import TrainDataset, TestDataset
 
 
-def collate_fn_train(
-    batch,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Sequence[str]]:
+def collate_fn_train(batch):
+    inp = torch.stack([item[0] for item in batch])  # [B, V, H, W]
+    out = torch.stack([item[1] for item in batch])  # [B, V, H, W]
+    return inp, out
 
-    inp = torch.stack([item[0] for item in batch])               # [B, V, H, W]
-    out = torch.stack([item[1] for item in batch])               # [B, V, H, W]
-    out_transform_mean = torch.stack([item[2] for item in batch])# [B, V]
-    out_transform_std = torch.stack([item[3] for item in batch]) # [B, V]
-    interval = torch.stack([item[4] for item in batch])          # [B, 1]
-    variables = batch[0][5]                                      # List[str], gleich für alle
-    return inp, out, out_transform_mean, out_transform_std, interval, variables
-
-
-def collate_fn_test(
-    batch,
-) -> Tuple[torch.Tensor, torch.Tensor, Sequence[str]]:
-
-    inp = torch.stack([item[0] for item in batch])   # [B, V, H, W]
-    out = torch.stack([item[1] for item in batch])   # [B, V, H, W]
-    variables = batch[0][2]                          # List[str]
-    return inp, out, variables
-
+def collate_fn_test(batch):
+    inp = torch.stack([item[0] for item in batch])
+    out = torch.stack([item[1] for item in batch])
+    return inp, out
 
 class DLWCDataModule(LightningDataModule):
 
@@ -89,6 +76,16 @@ class DLWCDataModule(LightningDataModule):
             self.data_train,
             batch_size=self.hparams.batch_size,
             shuffle=True,
+            collate_fn=collate_fn_train,
+            num_workers=4,
+        )
+
+    def val_dataloader(self):
+        # run validation on the same train‐type collate (or point to your test set)
+        return DataLoader(
+            self.data_test,
+            batch_size=self.hparams.test_batch_size,
+            shuffle=False,
             collate_fn=collate_fn_train,
             num_workers=4,
         )
