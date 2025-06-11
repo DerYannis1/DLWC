@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from weather_embedding_lite import WeatherEmbeddingLite
+from weather_embedding import WeatherEmbeddingLite
 
 
 class WeatherViTSeq2Seq(pl.LightningModule):
@@ -26,6 +26,9 @@ class WeatherViTSeq2Seq(pl.LightningModule):
         self.variables = variables
         self.num_vars = len(variables)
         self.patch_size = patch_size
+
+        self.patch_res_h = img_size[0] // patch_size
+        self.patch_res_w = img_size[1] // patch_size
 
         # Embedding for encoder (no separate decoder embed needed)
         self.encoder_embed = WeatherEmbeddingLite(
@@ -75,39 +78,49 @@ class WeatherViTSeq2Seq(pl.LightningModule):
 
     def forward(self, src_img: torch.Tensor) -> torch.Tensor:
         # src_img: [B, V, H, W]
-        # 1. Patch embedding
-        src_tok = self.encoder_embed(src_img, self.variables)  # [B, N, D]
+        B, V, H, W = src_img.shape
+
+        # 1. Patch embedding → [B, N, D], where N = V * (H/ps) * (W/ps)
+        src_tok = self.encoder_embed(src_img, self.variables)
+
         # 2. Encode
-        memory = self.encoder(src_tok)                         # [B, N, D]
-        # 3. Decode: use encoder tokens as decoder input
-        out_tok = self.decoder(src_tok, memory)                # [B, N, D]
+        memory = self.encoder(src_tok)
 
-        # 4. Project tokens to patch pixels
-        patches = self.output_proj(out_tok)  # [B, N, P*P]
-        B, N, _ = patches.shape
+        # 3. Decode (teacher-forcing)
+        out_tok = self.decoder(src_tok, memory)  # [B, N, D]
 
-        # 5. Reshape to (B, N, 1, p, p)
-        patches = patches.view(B, N, 1, self.patch_size, self.patch_size)
-        # 6. Rearrange into image grid
-        patches = patches.permute(0, 2, 1, 3, 4)
-        patches = patches.reshape(
+        # 4. Project each token to a p×p patch → [B, N, p*p]
+        patches = self.output_proj(out_tok)
+        _, N, _ = patches.shape
+
+        # 5. Reshape into per-variable, per-spatial-patch blocks:
+        #    N = V * patch_res_h * patch_res_w
+        Gh, Gw = self.patch_res_h, self.patch_res_w
+        assert V * Gh * Gw == N, f"N={N} != V({V})*{Gh}*{Gw}"
+
+        #   → [B, V, Gh, Gw, p, p]
+        patches = patches.view(
             B,
-            1,
-            self.patch_res,
-            self.patch_res,
+            V,
+            Gh,
+            Gw,
             self.patch_size,
             self.patch_size
         )
+
+        # 6. Permute so we can flatten patches into full images:
+        #    [B, V, Gh, p, Gw, p]
         patches = patches.permute(0, 1, 2, 4, 3, 5)
+
+        # 7. Collapse (Gh × p) and (Gw × p) to get [B, V, H, W]
         recon = patches.reshape(
             B,
-            1,
-            self.patch_res * self.patch_size,
-            self.patch_res * self.patch_size
+            V,
+            Gh * self.patch_size,
+            Gw * self.patch_size
         )
 
-        # 7. Final conv to map to V output channels
-        return self.final_conv(recon)  # [B, V, H, W]
+        return recon
 
     def training_step(self, batch, batch_idx):
         src, tgt = batch

@@ -1,10 +1,10 @@
-from lightning import LightningDataModule
+from pytorch_lightning import LightningDataModule
 import torch
 import numpy as np
 import os
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import transforms
-from typing import Optional, Sequence, Tuple
+from typing import Optional
 from dataloader.dataset import TrainDataset, TestDataset
 
 
@@ -38,24 +38,28 @@ class DLWCDataModule(LightningDataModule):
 
         self.transforms = transforms.Normalize(normalize_mean, normalize_std)
 
-        out_transforms = {}
         normalize_diff_std = dict(np.load(os.path.join(root_dir, "normalize_diff_std_3.npz")))
         normalize_diff_std = np.concatenate([normalize_diff_std[v] for v in variables], axis=0)
-        out_transforms[3] = transforms.Normalize(np.zeros_like(normalize_diff_std), normalize_diff_std)
-        self.out_transforms = out_transforms
+        self.out_transforms = {
+            3: transforms.Normalize(np.zeros_like(normalize_diff_std), normalize_diff_std)
+        }
 
         self.data_train: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
+
+    def prepare_data(self):
+        # No downloading or preprocessing necessary
+        pass
 
     def get_lat_lon(self):
         lat = np.load(os.path.join(self.hparams.root_dir, "lat.npy"))
         lon = np.load(os.path.join(self.hparams.root_dir, "lon.npy"))
         return lat, lon
-    
+
     def get_transforms(self):
         return self.transforms, self.out_transforms[3]
 
-    def setup(self, stage: Optional[str] = None):        
+    def setup(self, stage: Optional[str] = None):
         if not self.data_train and not self.data_test:
             self.data_train = TrainDataset(
                 root_dir=os.path.join(self.hparams.root_dir, 'train'),
@@ -70,7 +74,6 @@ class DLWCDataModule(LightningDataModule):
                 transform=self.transforms,
             )
 
-
     def train_dataloader(self):
         return DataLoader(
             self.data_train,
@@ -81,7 +84,6 @@ class DLWCDataModule(LightningDataModule):
         )
 
     def val_dataloader(self):
-        # run validation on the same train‐type collate (or point to your test set)
         return DataLoader(
             self.data_test,
             batch_size=self.hparams.test_batch_size,
