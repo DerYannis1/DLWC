@@ -12,7 +12,7 @@ from train import LitWeatherForecast
 
 
 def plot_loss_curve():
-    metrics_path = "./lightning_logs/simple_weather_vit/version_7/metrics.csv"
+    metrics_path = "./lightning_logs/lightning_logs/version_7/metrics.csv"
     if not os.path.exists(metrics_path):
         raise FileNotFoundError(f"Metrics file not found at {metrics_path}")
     metrics = pd.read_csv(metrics_path)
@@ -43,16 +43,13 @@ def plot_weather_sample():
         "r_100000","r_92500","r_85000","r_70000","r_50000","r_30000","r_20000",
     ]
 
-    # 1) Lade die Normalisierungsparameter
     mean_npz = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
     std_npz  = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
 
-    # Baue arrays in der Variablen-Reihenfolge
     means = np.array([mean_npz[v].item() for v in variables], dtype=float)
     stds  = np.array([std_npz[v].item()  for v in variables], dtype=float)
 
-    # --- Modell laden wie gehabt ---
-    ckpt_path = "./lightning_logs/simple_weather_vit/version_8/checkpoints/simple-wx-vit-epoch=04-val_loss=0.0942.ckpt"
+    ckpt_path = "./lightning_logs/lightning_logs/version_7/checkpoints/epoch=08.ckpt"
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     lit_model = LitWeatherForecast.load_from_checkpoint(ckpt_path)
@@ -78,18 +75,15 @@ def plot_weather_sample():
         t_int  = torch.ones(x.size(0), device=device)
         y_pred = model(x, variables, t_int)
 
-    # Extrahiere das t_100000-Feld
     idx = variables.index("t_100000")
     input_n = x[0,    idx].cpu().numpy()
     pred_n  = y_pred[0, idx].cpu().numpy()
     true_n  = y[0,    idx].cpu().numpy()
 
-    # 2) Inverse Normalize:  x_norm = (x - mean)/std  →  x = x_norm * std + mean
     input_field = input_n * stds[idx] + means[idx]
     pred_field  = pred_n  * stds[idx] + means[idx]
     true_field  = true_n  * stds[idx] + means[idx]
 
-    # 3) Plotte alle drei in einer Abbildung
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     titles = ['Input t_100000 at t', 'Predicted t_100000 at t+1', 'Actual t_100000 at t+1']
     fields = [input_field, pred_field, true_field]

@@ -78,7 +78,7 @@ if __name__ == "__main__":
     batch_size = 12
     test_batch_size = 12
     list_train_intervals = [(0, 1)]
-    img_size = (16, 16)
+    img_size = (32, 32)
     patch_size = 4
     embed_dim = 512
     depth = 6
