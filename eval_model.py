@@ -6,13 +6,13 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 
-from Weather_ViT import SimpleWeatherTransformer
+from Weather_Transformer import SimpleWeatherTransformer
 from dataloader.dataloader import DLWCDataModule
 from train import LitWeatherForecast
 
 
 def plot_loss_curve():
-    metrics_path = "./lightning_logs/lightning_logs/version_7/metrics.csv"
+    metrics_path = "./lightning_logs/lightning_logs/version_8/metrics.csv"
     if not os.path.exists(metrics_path):
         raise FileNotFoundError(f"Metrics file not found at {metrics_path}")
     metrics = pd.read_csv(metrics_path)
@@ -43,59 +43,73 @@ def plot_weather_sample():
         "r_100000","r_92500","r_85000","r_70000","r_50000","r_30000","r_20000",
     ]
 
-    mean_npz = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
-    std_npz  = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
+    # load separate normalization stats for CERRA (output/input) and ERA
+    mean_c = dict(np.load(os.path.join(root_dir, "normalize_mean_cerra.npz")))
+    std_c  = dict(np.load(os.path.join(root_dir, "normalize_std_cerra.npz")))
+    mean_e = dict(np.load(os.path.join(root_dir, "normalize_mean_era.npz")))
+    std_e  = dict(np.load(os.path.join(root_dir, "normalize_std_era.npz")))
 
-    means = np.array([mean_npz[v].item() for v in variables], dtype=float)
-    stds  = np.array([std_npz[v].item()  for v in variables], dtype=float)
-
-    ckpt_path = "./lightning_logs/lightning_logs/version_7/checkpoints/epoch=08.ckpt"
+    # checkpoint
+    ckpt_path = "./lightning_logs/lightning_logs/version_8/checkpoints/epoch=04-val_loss=0.0597.ckpt"
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     lit_model = LitWeatherForecast.load_from_checkpoint(ckpt_path)
-    model = lit_model.model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device).eval()
+    model = lit_model.model.to('cuda' if torch.cuda.is_available() else 'cpu').eval()
 
-    # Testdaten
+    # DataModule
     dm = DLWCDataModule(
         root_dir=root_dir,
         variables=variables,
-        list_train_intervals=[(0, 1)],
         batch_size=1,
-        test_batch_size=1,
+        test_batch_size=1
     )
     dm.setup()
-    batch = next(iter(dm.test_dataloader()))
-    x, y = batch[:2]
-    x = x.to(device);  y = y.to(device)
+    test_loader = dm.test_dataloader()
 
-    # Inferenz
+    # get one batch: (cerra_now, era_now, cerra_next)
+    cerra, era, true = next(iter(test_loader))
+    device = next(model.parameters()).device
+    cerra, era, true = cerra.to(device), era.to(device), true.to(device)
+
+    # inference
     with torch.no_grad():
-        t_int  = torch.ones(x.size(0), device=device)
-        y_pred = model(x, variables, t_int)
+        t_int  = torch.ones(cerra.size(0), device=device)  # or your actual lead time
+        pred = model(cerra, era, t_int)
 
+    # pick variable slice for plotting
     idx = variables.index("t_100000")
-    input_n = x[0,    idx].cpu().numpy()
-    pred_n  = y_pred[0, idx].cpu().numpy()
-    true_n  = y[0,    idx].cpu().numpy()
 
-    input_field = input_n * stds[idx] + means[idx]
-    pred_field  = pred_n  * stds[idx] + means[idx]
-    true_field  = true_n  * stds[idx] + means[idx]
+    # build arrays of means/stds
+    mean_arr_c = np.array([mean_c[v].item() for v in variables])
+    std_arr_c  = np.array([std_c[v].item()  for v in variables])
+    mean_arr_e = np.array([mean_e[v].item() for v in variables])
+    std_arr_e  = np.array([std_e[v].item()  for v in variables])
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    titles = ['Input t_100000 at t', 'Predicted t_100000 at t+1', 'Actual t_100000 at t+1']
-    fields = [input_field, pred_field, true_field]
+    # denormalize fields
+    era_field   = (era [0, idx].cpu().numpy() * std_arr_e[idx]) + mean_arr_e[idx]
+    cerra_field= (cerra[0, idx].cpu().numpy() * std_arr_c[idx]) + mean_arr_c[idx]
+    pred_field = (pred [0, idx].cpu().numpy() * std_arr_c[idx]) + mean_arr_c[idx]
+    true_field = (true[0, idx].cpu().numpy() * std_arr_c[idx]) + mean_arr_c[idx]
 
-    for ax, field, title in zip(axes, fields, titles):
+    # plot 4-panel
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    for ax, field, title in zip(
+        axes,
+        [era_field, cerra_field, pred_field, true_field],
+        [
+            'ERA input t_100000 at t',
+            'CERRA input t_100000 at t',
+            'Predicted t_100000 at t+1',
+            'Actual CERRA t_100000 at t+1'
+        ]
+    ):
         im = ax.imshow(field, cmap='coolwarm')
         ax.set_title(title)
         ax.axis('off')
         fig.colorbar(im, ax=ax, shrink=0.7)
 
     plt.tight_layout()
-    plt.savefig("Comparison_t_100000_denorm.png")
+    plt.savefig("Comparison_t_100000_denorm_epoch04.png")
     plt.close()
 
 
