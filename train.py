@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 from torch.optim import Adam
 
-from Weather_Transformer import SimpleWeatherTransformer
+from Weather_Transformer import DLWCTransformer
 from dataloader.dataloader import DLWCDataModule
 
 class LitWeatherForecast(LightningModule):
@@ -24,7 +24,7 @@ class LitWeatherForecast(LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self.model = SimpleWeatherTransformer(
+        self.model = DLWCTransformer(
             variables      = variables,
             img_size        = img_size,
             img_size_era    = img_size_era,
@@ -83,9 +83,9 @@ if __name__ == "__main__":
     test_batch_size    = 4
     img_size           = (16, 16)
     img_size_era       = (32, 32)   # set your ERA resolution
-    patch_size         = 2
+    patch_size         = 8
     embed_dim          = 128
-    depth              = 3
+    depth              = 2
     num_heads          = 2
     mlp_ratio          = 4.0
     lr                 = 1e-4

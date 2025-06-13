@@ -9,6 +9,10 @@ import shutil
 import random
 
 
+"""
+Reshaping und Normalisierung funktioniert aktuell nicht fehlerfrei für den dualen Input.
+"""
+
 def reshape(input_dir, temp_output_dir):
     input_files = sorted(Path(input_dir).glob("*.nc"))
 
