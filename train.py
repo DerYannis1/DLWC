@@ -79,14 +79,14 @@ if __name__ == "__main__":
         "v_100000","v_92500","v_85000","v_70000","v_50000","v_30000","v_20000",
         "r_100000","r_92500","r_85000","r_70000","r_50000","r_30000","r_20000",
     ]
-    batch_size         = 12
-    test_batch_size    = 12
+    batch_size         = 4
+    test_batch_size    = 4
     img_size           = (16, 16)
     img_size_era       = (32, 32)   # set your ERA resolution
-    patch_size         = 4
-    embed_dim          = 512
-    depth              = 6
-    num_heads          = 8
+    patch_size         = 2
+    embed_dim          = 128
+    depth              = 3
+    num_heads          = 2
     mlp_ratio          = 4.0
     lr                 = 1e-4
     max_epochs         = 50
