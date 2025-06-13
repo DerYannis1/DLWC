@@ -50,7 +50,7 @@ def plot_weather_sample():
     std_e  = dict(np.load(os.path.join(root_dir, "normalize_std_era.npz")))
 
     # checkpoint
-    ckpt_path = "./lightning_logs/lightning_logs/version_16/checkpoints/epoch=45-val_loss=0.0485.ckpt"
+    ckpt_path = "./lightning_logs/lightning_logs/version_16/checkpoints/last.ckpt"
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     lit_model = LitWeatherForecast.load_from_checkpoint(ckpt_path)

@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # 5. Logger & Callbacks
     logger = CSVLogger("lightning_logs")
     checkpoint_cb = ModelCheckpoint(
-        monitor='val_loss', mode='min', save_top_k=3,
+        monitor='val_loss', mode='min', save_top_k=3, save_last=True,
         filename='{epoch:02d}-{val_loss:.4f}'
     )
     lr_monitor = LearningRateMonitor(logging_interval='step')
