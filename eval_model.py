@@ -6,13 +6,13 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 
-from Weather_Transformer import SimpleWeatherTransformer
+from Weather_Transformer import DLWCTransformer
 from dataloader.dataloader import DLWCDataModule
 from train import LitWeatherForecast
 
 
 def plot_loss_curve():
-    metrics_path = "./lightning_logs/lightning_logs/version_16/metrics.csv"
+    metrics_path = "./lightning_logs/lightning_logs/version_1/metrics.csv"
     if not os.path.exists(metrics_path):
         raise FileNotFoundError(f"Metrics file not found at {metrics_path}")
     metrics = pd.read_csv(metrics_path)
@@ -50,7 +50,7 @@ def plot_weather_sample():
     std_e  = dict(np.load(os.path.join(root_dir, "normalize_std_era.npz")))
 
     # checkpoint
-    ckpt_path = "./lightning_logs/lightning_logs/version_16/checkpoints/last.ckpt"
+    ckpt_path = "./lightning_logs/lightning_logs/version_1/checkpoints/last.ckpt"
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     lit_model = LitWeatherForecast.load_from_checkpoint(ckpt_path)
@@ -109,7 +109,7 @@ def plot_weather_sample():
         fig.colorbar(im, ax=ax, shrink=0.7)
 
     plt.tight_layout()
-    plt.savefig("Comparison_t_100000_denorm_epoch45.png")
+    plt.savefig("Comparison_t_100000.png")
     plt.close()
 
 
