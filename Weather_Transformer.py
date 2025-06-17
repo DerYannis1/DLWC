@@ -18,31 +18,33 @@ class DLWCTransformer(nn.Module):
     def __init__(
         self,
         variables,
-        img_size,
+        img_size_cerra,
         img_size_era,
-        patch_size=4,
+        patch_size_cerra=1,
+        patch_size_era=4,
         embed_dim=256,
         depth=6,
         num_heads=8,
         mlp_ratio=4.0,
     ):
         super().__init__()
-        self.variables     = variables
-        self.img_size      = img_size         #cerra 16x16
-        self.img_size_era  = img_size_era
-        self.patch_size    = patch_size
+        self.variables        = variables
+        self.img_size_cerra   = img_size_cerra
+        self.img_size_era     = img_size_era
+        self.patch_size_cerra = patch_size_cerra
+        self.patch_size_era   = patch_size_era
 
-        # Zwei Embeddings: eins für CERRA (16x16) und eins für ERA (32x32)
+        # Zwei Embeddings: eins für CERRA (small patches) und eins für ERA (larger patches)
         self.embed_cerra = WeatherEmbedding(
             variables=variables,
-            img_size=img_size,
-            patch_size=patch_size,
+            img_size=img_size_cerra,
+            patch_size=patch_size_cerra,
             embed_dim=embed_dim,
         )
-        self.embed_era   = WeatherEmbedding(
+        self.embed_era = WeatherEmbedding(
             variables=variables,
             img_size=img_size_era,
-            patch_size=patch_size,
+            patch_size=patch_size_era,
             embed_dim=embed_dim,
         )
 
@@ -58,8 +60,10 @@ class DLWCTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=depth)
 
-        # Head: projiziert jeden Token zu p*p Pixeln
-        self.head = nn.Linear(embed_dim, patch_size * patch_size)
+        # Separate heads for cerra and era to produce patch_size^2 outputs per token
+        self.head_cerra = nn.Linear(embed_dim, patch_size_cerra * patch_size_cerra)
+        self.head_era   = nn.Linear(embed_dim, patch_size_era   * patch_size_era)
+
         self._init_weights()
 
     def _init_weights(self):
@@ -70,11 +74,11 @@ class DLWCTransformer(nn.Module):
                     nn.init.zeros_(m.bias)
 
     def unpatchify(self, small_tokens):
-        # small_tokens: (B, L_small, p*p)
+        # small_tokens: (B, L_small, p_c^2)
         B, L_small, pp = small_tokens.shape
-        p = self.patch_size
+        p = self.patch_size_cerra
         V = len(self.variables)
-        H, W = self.img_size
+        H, W = self.img_size_cerra
         Gh, Gw = H // p, W // p
         expected = V * Gh * Gw
         if L_small != expected:
@@ -85,27 +89,33 @@ class DLWCTransformer(nn.Module):
 
     def forward(self, x_cerra, x_era, time_interval):
         """
-        x_cerra: (B, V, H, W)
-        x_era:   (B, V, H_era, W_era)
+        x_cerra: (B, V, H_c, W_c)
+        x_era:   (B, V, H_e, W_e)
         time_interval: (B,) or (B,1)
         """
-        emb_c = self.embed_cerra(x_cerra, self.variables)  # (B, L_small, D)
-        emb_e = self.embed_era  (x_era,   self.variables)  # (B, L_era,   D)
+        # Embed inputs
+        emb_c = self.embed_cerra(x_cerra, self.variables)  # (B, L_c, D)
+        emb_e = self.embed_era  (x_era,   self.variables)  # (B, L_e, D)
         emb_c = self.norm_embed(emb_c)
         emb_e = self.norm_embed(emb_e)
 
+        # Time embedding
         t_emb = self.time_embed(time_interval)             # (B, D)
         emb_c = emb_c + t_emb.unsqueeze(1)
         emb_e = emb_e + t_emb.unsqueeze(1)
 
-        # 3) Tokens zusammenführen
-        tokens = torch.cat([emb_c, emb_e], dim=1)          # (B, L_small+L_era, D)
+        # Concatenate tokens
+        tokens = torch.cat([emb_c, emb_e], dim=1)          # (B, L_c+L_e, D)
 
+        # Transformer
         x_trans = self.transformer(tokens)                 # (B, L_total, D)
 
-        patches = self.head(x_trans)                       # (B, L_total, p*p)
+        # Project to patches
+        L_c = emb_c.shape[1]
+        patches_c = self.head_cerra(x_trans[:, :L_c, :])   # (B, L_c, p_c^2)
+        # era patches (optional, not used for output reconstruction)
+        # patches_e = self.head_era(x_trans[:, L_c:, :])   # (B, L_e, p_e^2)
 
-        L_small = emb_c.shape[1]
-        small_patches = patches[:, :L_small, :]           # (B, L_small, p*p)
-        out = self.unpatchify(small_patches)               # (B, V, H, W)
+        # Reconstruct cerra output
+        out = self.unpatchify(patches_c)                   # (B, V, H_c, W_c)
         return out

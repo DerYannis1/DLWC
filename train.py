@@ -13,9 +13,10 @@ class LitWeatherForecast(LightningModule):
     def __init__(
         self,
         variables,
-        img_size,
+        img_size_cerra,
         img_size_era,
-        patch_size,
+        patch_size_cerra,
+        patch_size_era,
         embed_dim,
         depth,
         num_heads,
@@ -25,14 +26,15 @@ class LitWeatherForecast(LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = DLWCTransformer(
-            variables      = variables,
-            img_size        = img_size,
-            img_size_era    = img_size_era,
-            patch_size      = patch_size,
-            embed_dim       = embed_dim,
-            depth           = depth,
-            num_heads       = num_heads,
-            mlp_ratio       = mlp_ratio,
+            variables        = variables,
+            img_size_cerra   = img_size_cerra,
+            img_size_era     = img_size_era,
+            patch_size_cerra = patch_size_cerra,
+            patch_size_era   = patch_size_era,
+            embed_dim        = embed_dim,
+            depth            = depth,
+            num_heads        = num_heads,
+            mlp_ratio        = mlp_ratio,
         )
         self.loss_fn = F.mse_loss
 
@@ -43,7 +45,6 @@ class LitWeatherForecast(LightningModule):
         # batch: (cerra_now, era_now, cerra_next)
         x_cerra, x_era, y = batch
         B = x_cerra.size(0)
-        # create a time tensor, or use provided time if you extend the dataset
         t_int = torch.ones(B, device=self.device) * 1.0
 
         y_hat = self(x_cerra, x_era, t_int)
@@ -81,14 +82,15 @@ if __name__ == "__main__":
     ]
     batch_size         = 4
     test_batch_size    = 4
-    img_size           = (16, 16)
+    img_size_cerra     = (16, 16)
     img_size_era       = (32, 32)   # set your ERA resolution
-    patch_size         = 8
-    embed_dim          = 128
-    depth              = 2
-    num_heads          = 2
+    patch_size_cerra   = 1
+    patch_size_era     = 4
+    embed_dim          = 256
+    depth              = 5
+    num_heads          = 4
     mlp_ratio          = 4.0
-    lr                 = 1e-4
+    lr                 = 5e-4
     max_epochs         = 50
 
     # 3. DataModule
@@ -101,15 +103,16 @@ if __name__ == "__main__":
 
     # 4. LightningModule
     lit_model = LitWeatherForecast(
-        variables    = variables,
-        img_size     = img_size,
-        img_size_era = img_size_era,
-        patch_size   = patch_size,
-        embed_dim    = embed_dim,
-        depth        = depth,
-        num_heads    = num_heads,
-        mlp_ratio    = mlp_ratio,
-        lr           = lr,
+        variables        = variables,
+        img_size_cerra   = img_size_cerra,
+        img_size_era     = img_size_era,
+        patch_size_cerra = patch_size_cerra,
+        patch_size_era   = patch_size_era,
+        embed_dim        = embed_dim,
+        depth            = depth,
+        num_heads        = num_heads,
+        mlp_ratio        = mlp_ratio,
+        lr               = lr,
     )
 
     # 5. Logger & Callbacks
