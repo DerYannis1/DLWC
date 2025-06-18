@@ -184,3 +184,6 @@ data/normalize_*
 data/mean*
 lightning_logs/
 tb_logs/
+data/train/era_*
+data/test/era_*
+data/era_*

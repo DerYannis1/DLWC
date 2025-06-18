@@ -1,4 +1,14 @@
-# QUELLE: STORMER-Github -> utils
+"""
+Das positional embedding ist von https://github.com/tung-nd/stormer übernommen.
+stormer/stormer/utils/pos_embed.py
+
+@article{nguyen2023scaling,
+  title={Scaling transformer neural networks for skillful and reliable medium-range weather forecasting},
+  author={Nguyen, Tung and Shah, Rohan and Bansal, Hritik and Arcomano, Troy and Madireddy, Sandeep and Maulik, Romit and Kotamarthi, Veerabhadra and Foster, Ian and Grover, Aditya},
+  journal={arXiv preprint arXiv:2312.03876},
+  year={2023}
+}
+"""
 
 import numpy as np
 import torch

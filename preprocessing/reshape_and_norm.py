@@ -9,6 +9,12 @@ import shutil
 import random
 
 
+"""
+
+Reshaping und Normalisierung funktioniert aktuell nur für entweder Era5- oder CERRA-Daten zeitgleich, aber nicht für beide. 
+
+"""
+
 def reshape(input_dir, temp_output_dir):
     input_files = sorted(Path(input_dir).glob("*.nc"))
 

@@ -3,95 +3,92 @@ import torch
 import numpy as np
 import os
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import transforms
+from torchvision import transforms
 from typing import Optional
 from dataloader.dataset import TrainDataset, TestDataset
 
 
-def collate_fn_train(batch):
-    inp = torch.stack([item[0] for item in batch])  # [B, V, H, W]
-    out = torch.stack([item[1] for item in batch])  # [B, V, H, W]
-    return inp, out
+def collate_fn_train_dual(batch):
+    # batch: List of (cerra_now, era_now, cerra_next)
+    cerra, era, target = zip(*batch)
+    cerra = torch.stack(cerra)   # [B, V, H, W]
+    era   = torch.stack(era)     # [B, V, H_era, W_era]
+    target= torch.stack(target)  # [B, V, H, W]
+    return cerra, era, target
 
-def collate_fn_test(batch):
-    inp = torch.stack([item[0] for item in batch])
-    out = torch.stack([item[1] for item in batch])
-    return inp, out
+
+def collate_fn_test_dual(batch):
+    return collate_fn_train_dual(batch)
+
 
 class DLWCDataModule(LightningDataModule):
 
     def __init__(
         self,
-        root_dir,
-        variables,
-        list_train_intervals,
-        batch_size=5,
-        test_batch_size=5,
+        root_dir: str,
+        variables: list,
+        batch_size: int = 5,
+        test_batch_size: int = 5,
     ):
         super().__init__()
+        self.root_dir        = root_dir
+        self.variables       = variables
+        self.batch_size      = batch_size
+        self.test_batch_size = test_batch_size
 
-        self.save_hyperparameters(logger=False)
-        normalize_mean = dict(np.load(os.path.join(root_dir, "normalize_mean.npz")))
-        normalize_mean = np.concatenate([normalize_mean[v] for v in variables], axis=0)
-        normalize_std = dict(np.load(os.path.join(root_dir, "normalize_std.npz")))
-        normalize_std = np.concatenate([normalize_std[v] for v in variables], axis=0)
+        cerra_mean = dict(np.load(os.path.join(root_dir, "normalize_mean_cerra.npz")))
+        cerra_std  = dict(np.load(os.path.join(root_dir, "normalize_std_cerra.npz")))
+        era_mean   = dict(np.load(os.path.join(root_dir, "normalize_mean_era.npz")))
+        era_std    = dict(np.load(os.path.join(root_dir, "normalize_std_era.npz")))
 
-        self.transforms = transforms.Normalize(normalize_mean, normalize_std)
-        self.out_transforms  = self.transforms
+        m_c = np.concatenate([cerra_mean[v] for v in variables], axis=0)
+        s_c = np.concatenate([cerra_std [v] for v in variables], axis=0)
+        m_e = np.concatenate([era_mean  [v] for v in variables], axis=0)
+        s_e = np.concatenate([era_std  [v] for v in variables], axis=0)
+
+        # normalize CERRA and ERA separately
+        self.cerra_transform = transforms.Normalize(mean=m_c, std=s_c)
+        self.era_transform   = transforms.Normalize(mean=m_e, std=s_e)
+
+        self.out_transform   = self.cerra_transform
 
         self.data_train: Optional[Dataset] = None
-        self.data_test: Optional[Dataset] = None
-
-    def prepare_data(self):
-        # No downloading or preprocessing necessary
-        pass
-
-    def get_lat_lon(self):
-        lat = np.load(os.path.join(self.hparams.root_dir, "lat.npy"))
-        lon = np.load(os.path.join(self.hparams.root_dir, "lon.npy"))
-        return lat, lon
-
-    def get_transforms(self):
-        return self.transforms, self.out_transforms
+        self.data_test:  Optional[Dataset] = None
 
     def setup(self, stage: Optional[str] = None):
-        if not self.data_train and not self.data_test:
+        if self.data_train is None and self.data_test is None:
             self.data_train = TrainDataset(
-                root_dir=os.path.join(self.hparams.root_dir, 'train'),
-                variables=self.hparams.variables,
-                inp_transform=self.transforms,
-                out_transform=self.out_transforms,
+                root_dir=os.path.join(self.root_dir, 'train'),
+                variables=self.variables,
+                inp_transform_cerra=self.cerra_transform,
+                inp_transform_era=self.era_transform,
+                out_transform=self.out_transform,
             )
-
             self.data_test = TestDataset(
-                root_dir=os.path.join(self.hparams.root_dir, 'test'),
-                variables=self.hparams.variables,
-                transform=self.transforms,
+                root_dir=os.path.join(self.root_dir, 'test'),
+                variables=self.variables,
+                inp_transform_cerra=self.cerra_transform,
+                inp_transform_era=self.era_transform,
+                out_transform=self.out_transform,
             )
 
     def train_dataloader(self):
         return DataLoader(
             self.data_train,
-            batch_size=self.hparams.batch_size,
+            batch_size=self.batch_size,
             shuffle=True,
-            collate_fn=collate_fn_train,
+            collate_fn=collate_fn_train_dual,
             num_workers=4,
         )
 
     def val_dataloader(self):
         return DataLoader(
             self.data_test,
-            batch_size=self.hparams.test_batch_size,
+            batch_size=self.test_batch_size,
             shuffle=False,
-            collate_fn=collate_fn_train,
+            collate_fn=collate_fn_test_dual,
             num_workers=4,
         )
 
     def test_dataloader(self):
-        return DataLoader(
-            self.data_test,
-            batch_size=self.hparams.test_batch_size,
-            shuffle=False,
-            collate_fn=collate_fn_test,
-            num_workers=4,
-        )
+        return self.val_dataloader()

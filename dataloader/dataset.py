@@ -1,56 +1,67 @@
 import os
 from glob import glob
-from typing import List
+from typing import List, Tuple
 import torch
 from torch.utils.data import Dataset
 import netCDF4
 import numpy as np
 
-
 class TrainDataset(Dataset):
     def __init__(
         self,
-        root_dir,
+        root_dir: str,
         variables: List[str],
-        inp_transform,
+        inp_transform_cerra,
+        inp_transform_era,
         out_transform,
     ):
         super().__init__()
-        self.root_dir = root_dir
         self.variables = variables
-        self.inp_transform = inp_transform
-        self.out_transform = out_transform
+        self.inp_transform_cerra = inp_transform_cerra
+        self.inp_transform_era   = inp_transform_era
+        self.out_transform       = out_transform
 
-        self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
+        era_files   = sorted(glob(os.path.join(root_dir, "era_*.nc")))
+        cerra_files = sorted(glob(os.path.join(root_dir, "cerra_*.nc")))
 
-        # Für jeden Monat: öffne Datei und speichere Anzahl Zeitpunkte
-        self.time_index = []
-        for f in self.files:
-            ds = netCDF4.Dataset(f)
-            num_times = len(ds.dimensions["time"])
-            self.time_index.extend([(f, i) for i in range(num_times - 1)])  # -1: letzter Punkt hat kein Folgefeld
-            ds.close()
+        def make_map(files, prefix: str):
+            m = {}
+            for f in files:
+                key = os.path.basename(f).replace(f"{prefix}_", "").replace(".nc", "")
+                m[key] = f
+            return m
+
+        era_map   = make_map(era_files,   "era")
+        cerra_map = make_map(cerra_files, "cerra")
+        common_keys = sorted(set(era_map) & set(cerra_map))
+
+        self.index: List[Tuple[str,str,int]] = []
+        for key in common_keys:
+            fe = era_map[key]
+            fc = cerra_map[key]
+            with netCDF4.Dataset(fc) as ds_c:
+                T = len(ds_c.dimensions["time"])
+            for t in range(T - 1):  # nur bis T-1, damit t+1 existiert
+                self.index.append((fe, fc, t))
 
     def __len__(self):
-        return len(self.time_index)
+        return len(self.index)
 
-    def __getitem__(self, index):
-        file_path, time_idx = self.time_index[index]
-        with netCDF4.Dataset(file_path) as ds:
-            data_list_in = [ds[v][time_idx] for v in self.variables]
-            data_list_out = [ds[v][time_idx + 1] for v in self.variables]
+    def __getitem__(self, idx):
+        fe, fc, t = self.index[idx]
 
-        inp_data  = np.stack(data_list_in,  axis=0)  # V×H×W
-        out_data  = np.stack(data_list_out, axis=0)
+        with netCDF4.Dataset(fe) as ds_e:
+            arr_e = np.stack([ds_e[v][t] for v in self.variables], axis=0)  # (V, H_era, W_era)
 
-        # direkt absolute Werte normalisieren
-        inp_tensor = torch.from_numpy(inp_data).float()
-        out_tensor = torch.from_numpy(out_data).float()
+        with netCDF4.Dataset(fc) as ds_c:
+            arr_c_now  = np.stack([ds_c[v][t]   for v in self.variables], axis=0)  # (V, H, W)
+            arr_c_next = np.stack([ds_c[v][t+1] for v in self.variables], axis=0)  # (V, H, W)
 
-        return (
-            self.inp_transform(inp_tensor),
-            self.out_transform(out_tensor),
-        )
+        inp_c  = self.inp_transform_cerra(torch.from_numpy(arr_c_now ).float())
+        inp_e  = self.inp_transform_era(torch.from_numpy(arr_e     ).float())
+        target = self.out_transform(torch.from_numpy(arr_c_next).float())
+
+        return inp_c, inp_e, target
 
 
 class TestDataset(Dataset):
@@ -58,37 +69,54 @@ class TestDataset(Dataset):
         self,
         root_dir: str,
         variables: List[str],
-        transform,
+        inp_transform_cerra,
+        inp_transform_era,
+        out_transform,
     ):
         super().__init__()
-        self.root_dir = root_dir
         self.variables = variables
-        self.transform = transform
-        self.lead_time = 3
+        self.inp_transform_cerra = inp_transform_cerra
+        self.inp_transform_era   = inp_transform_era
+        self.out_transform       = out_transform
 
-        self.files = sorted(glob(os.path.join(root_dir, "*.nc")))
+        era_files   = sorted(glob(os.path.join(root_dir, "era_*.nc")))
+        cerra_files = sorted(glob(os.path.join(root_dir, "cerra_*.nc")))
 
-        self.time_index = []
-        for f in self.files:
-            ds = netCDF4.Dataset(f)
-            num_times = len(ds.dimensions["time"])
-            self.time_index.extend([(f, i) for i in range(num_times - 1)])  # Nur Paare mit Zielpunkt
-            ds.close()
+        def make_map(files, prefix: str):
+            m = {}
+            for f in files:
+                key = os.path.basename(f).replace(f"{prefix}_", "").replace(".nc", "")
+                m[key] = f
+            return m
+
+        era_map   = make_map(era_files,   "era")
+        cerra_map = make_map(cerra_files, "cerra")
+        common_keys = sorted(set(era_map) & set(cerra_map))
+
+        self.index: List[Tuple[str,str,int]] = []
+        for key in common_keys:
+            fe = era_map[key]
+            fc = cerra_map[key]
+            with netCDF4.Dataset(fc) as ds_c:
+                T = len(ds_c.dimensions["time"])
+            for t in range(T - 1):
+                self.index.append((fe, fc, t))
 
     def __len__(self):
-        return len(self.time_index)
+        return len(self.index)
 
-    def __getitem__(self, index):
-        file_path, time_idx = self.time_index[index]
-        with netCDF4.Dataset(file_path) as ds:
-            data_list_in = [ds[v][time_idx] for v in self.variables]
-            data_list_out = [ds[v][time_idx + 1] for v in self.variables]
+    def __getitem__(self, idx):
+        fe, fc, t = self.index[idx]
 
-        inp_tensor = torch.from_numpy(np.stack(data_list_in, axis=0))
-        out_tensor = torch.from_numpy(np.stack(data_list_out, axis=0))
+        with netCDF4.Dataset(fe) as ds_e:
+            arr_e = np.stack([ds_e[v][t] for v in self.variables], axis=0)
 
-        return (
-            self.transform(inp_tensor),
-            self.transform(out_tensor),
-            self.variables
-        )
+        with netCDF4.Dataset(fc) as ds_c:
+            arr_c_now  = np.stack([ds_c[v][t]   for v in self.variables], axis=0)
+            arr_c_next = np.stack([ds_c[v][t+1] for v in self.variables], axis=0)
+
+        inp_c  = self.inp_transform_cerra(torch.from_numpy(arr_c_now ).float())
+        inp_e  = self.inp_transform_era(torch.from_numpy(arr_e     ).float())
+        target = self.out_transform(torch.from_numpy(arr_c_next).float())
+
+        return inp_c, inp_e, target
