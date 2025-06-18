@@ -10,8 +10,8 @@ class WeatherEmbeddingLite(nn.Module):
         self,
         variables,
         img_size,
-        patch_size=2,
-        embed_dim=512,
+        patch_size=1,
+        embed_dim=256,
     ):
         super().__init__()
 
@@ -79,7 +79,6 @@ class WeatherEmbeddingLite(nn.Module):
 
         x = torch.stack(embeds, dim=1)  # B, V, L, D
 
-        # Add variable and positional embeddings
         var_embed = self.get_var_emb(self.channel_embed, variables).unsqueeze(2)  # B, V, 1, D
         x = x + var_embed  # B, V, L, D
         x = x + self.pos_embed.unsqueeze(1)  # B, V, L, D
