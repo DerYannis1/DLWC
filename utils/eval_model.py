@@ -6,9 +6,9 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 
-from Weather_Transformer import DLWCTransformer
+from DLWC_transformer import DLWCTransformer
 from dataloader.dataloader import DLWCDataModule
-from train import LitWeatherForecast
+from train import WeatherForecast
 
 
 def plot_loss_curve():

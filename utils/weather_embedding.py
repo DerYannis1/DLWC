@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from timm.models.vision_transformer import PatchEmbed, trunc_normal_
 
-from pos_embed import get_2d_sincos_pos_embed, get_1d_sincos_pos_embed_from_grid
+from utils.pos_embed import get_2d_sincos_pos_embed, get_1d_sincos_pos_embed_from_grid
 
 class WeatherEmbedding(nn.Module):
     def __init__(
@@ -80,7 +80,7 @@ class WeatherEmbedding(nn.Module):
         x = x + var_embed  # B, V, L, D
         x = x + self.pos_embed.unsqueeze(1)  # B, V, L, D
 
-        # Flatten: combine variable and patch dimensions
+        # combine variable and patch dimensions
         x = x.flatten(1, 2)  # B, V*L, D
 
         return x

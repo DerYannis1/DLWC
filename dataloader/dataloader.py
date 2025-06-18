@@ -36,22 +36,20 @@ class DLWCDataModule(LightningDataModule):
         self.batch_size      = batch_size
         self.test_batch_size = test_batch_size
 
-        # --- load separate normalization stats ---
         cerra_mean = dict(np.load(os.path.join(root_dir, "normalize_mean_cerra.npz")))
         cerra_std  = dict(np.load(os.path.join(root_dir, "normalize_std_cerra.npz")))
         era_mean   = dict(np.load(os.path.join(root_dir, "normalize_mean_era.npz")))
         era_std    = dict(np.load(os.path.join(root_dir, "normalize_std_era.npz")))
 
-        # stack in variable order
         m_c = np.concatenate([cerra_mean[v] for v in variables], axis=0)
         s_c = np.concatenate([cerra_std [v] for v in variables], axis=0)
         m_e = np.concatenate([era_mean  [v] for v in variables], axis=0)
         s_e = np.concatenate([era_std  [v] for v in variables], axis=0)
 
-        # transforms: normalize CERRA and ERA separately
+        # normalize CERRA and ERA separately
         self.cerra_transform = transforms.Normalize(mean=m_c, std=s_c)
         self.era_transform   = transforms.Normalize(mean=m_e, std=s_e)
-        # output uses CERRA stats
+
         self.out_transform   = self.cerra_transform
 
         self.data_train: Optional[Dataset] = None

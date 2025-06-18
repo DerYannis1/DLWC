@@ -21,11 +21,9 @@ class TrainDataset(Dataset):
         self.inp_transform_era   = inp_transform_era
         self.out_transform       = out_transform
 
-        # 1) finde alle ERA- und CERRA-Dateien
         era_files   = sorted(glob(os.path.join(root_dir, "era_*.nc")))
         cerra_files = sorted(glob(os.path.join(root_dir, "cerra_*.nc")))
 
-        # 2) mappe Monatsschlüssel MM_YYYY → Pfad
         def make_map(files, prefix: str):
             m = {}
             for f in files:
@@ -37,7 +35,6 @@ class TrainDataset(Dataset):
         cerra_map = make_map(cerra_files, "cerra")
         common_keys = sorted(set(era_map) & set(cerra_map))
 
-        # 3) Baue Index-Liste (era_path, cerra_path, time_idx)
         self.index: List[Tuple[str,str,int]] = []
         for key in common_keys:
             fe = era_map[key]
@@ -53,16 +50,13 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         fe, fc, t = self.index[idx]
 
-        # Lade ERA zum Zeitpunkt t
         with netCDF4.Dataset(fe) as ds_e:
             arr_e = np.stack([ds_e[v][t] for v in self.variables], axis=0)  # (V, H_era, W_era)
 
-        # Lade CERRA jetzt (t) und Ziel (t+1)
         with netCDF4.Dataset(fc) as ds_c:
             arr_c_now  = np.stack([ds_c[v][t]   for v in self.variables], axis=0)  # (V, H, W)
             arr_c_next = np.stack([ds_c[v][t+1] for v in self.variables], axis=0)  # (V, H, W)
 
-        # Wandle zu Tensoren und transformiere
         inp_c  = self.inp_transform_cerra(torch.from_numpy(arr_c_now ).float())
         inp_e  = self.inp_transform_era(torch.from_numpy(arr_e     ).float())
         target = self.out_transform(torch.from_numpy(arr_c_next).float())

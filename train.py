@@ -6,10 +6,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 from torch.optim import Adam
 
-from Weather_Transformer import DLWCTransformer
+from DLWC_transformer import DLWCTransformer
 from dataloader.dataloader import DLWCDataModule
 
-class LitWeatherForecast(LightningModule):
+class WeatherForecast(LightningModule):
     def __init__(
         self,
         variables,
@@ -68,10 +68,9 @@ class LitWeatherForecast(LightningModule):
 
 
 if __name__ == "__main__":
-    # 1. Reproducibility
+    #  Seed for Reproducibility
     seed_everything(42)
 
-    # 2. Hyperparameters
     root_dir = './data'
     variables = [
         "t_100000","t_92500","t_85000","t_70000","t_50000","t_30000","t_20000",
@@ -83,7 +82,7 @@ if __name__ == "__main__":
     batch_size         = 4
     test_batch_size    = 4
     img_size_cerra     = (16, 16)
-    img_size_era       = (32, 32)   # set your ERA resolution
+    img_size_era       = (32, 32)
     patch_size_cerra   = 1
     patch_size_era     = 4
     embed_dim          = 256
@@ -93,7 +92,6 @@ if __name__ == "__main__":
     lr                 = 5e-4
     max_epochs         = 50
 
-    # 3. DataModule
     data_module = DLWCDataModule(
         root_dir        = root_dir,
         variables       = variables,
@@ -101,8 +99,7 @@ if __name__ == "__main__":
         test_batch_size = test_batch_size
     )
 
-    # 4. LightningModule
-    lit_model = LitWeatherForecast(
+    lit_model = WeatherForecast(
         variables        = variables,
         img_size_cerra   = img_size_cerra,
         img_size_era     = img_size_era,
@@ -115,7 +112,6 @@ if __name__ == "__main__":
         lr               = lr,
     )
 
-    # 5. Logger & Callbacks
     logger = CSVLogger("lightning_logs")
     checkpoint_cb = ModelCheckpoint(
         monitor='val_loss', mode='min', save_top_k=3, save_last=True,
@@ -123,7 +119,6 @@ if __name__ == "__main__":
     )
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
-    # 6. Trainer
     trainer = Trainer(
         logger            = logger,
         callbacks         = [checkpoint_cb, lr_monitor],
@@ -135,6 +130,5 @@ if __name__ == "__main__":
         log_every_n_steps = 50,
     )
 
-    # 7. Train & Test
     trainer.fit(lit_model, datamodule=data_module)
     trainer.test(lit_model, datamodule=data_module)

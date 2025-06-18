@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 from timm.models.vision_transformer import trunc_normal_
-from weather_embedding import WeatherEmbedding
+from utils.weather_embedding import WeatherEmbedding
 
-class SimpleTimestepEmbedder(nn.Module):
+class TimestepEmbedder(nn.Module):
     def __init__(self, embed_dim):
         super().__init__()
         self.linear = nn.Sequential(
@@ -49,7 +49,7 @@ class DLWCTransformer(nn.Module):
         )
 
         self.norm_embed = nn.LayerNorm(embed_dim)
-        self.time_embed = SimpleTimestepEmbedder(embed_dim)
+        self.time_embed = TimestepEmbedder(embed_dim)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -60,7 +60,6 @@ class DLWCTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=depth)
 
-        # Separate heads for cerra and era to produce patch_size^2 outputs per token
         self.head_cerra = nn.Linear(embed_dim, patch_size_cerra * patch_size_cerra)
         self.head_era   = nn.Linear(embed_dim, patch_size_era   * patch_size_era)
 
@@ -74,13 +73,13 @@ class DLWCTransformer(nn.Module):
                     nn.init.zeros_(m.bias)
 
     def unpatchify(self, small_tokens):
-        # small_tokens: (B, L_small, p_c^2)
         B, L_small, pp = small_tokens.shape
         p = self.patch_size_cerra
         V = len(self.variables)
         H, W = self.img_size_cerra
         Gh, Gw = H // p, W // p
         expected = V * Gh * Gw
+        #Debugging
         if L_small != expected:
             raise ValueError(f"Expected {expected} small tokens, got {L_small}")
         x = small_tokens.view(B, V, Gh, Gw, p, p)
@@ -93,29 +92,21 @@ class DLWCTransformer(nn.Module):
         x_era:   (B, V, H_e, W_e)
         time_interval: (B,) or (B,1)
         """
-        # Embed inputs
         emb_c = self.embed_cerra(x_cerra, self.variables)  # (B, L_c, D)
         emb_e = self.embed_era  (x_era,   self.variables)  # (B, L_e, D)
         emb_c = self.norm_embed(emb_c)
         emb_e = self.norm_embed(emb_e)
 
-        # Time embedding
         t_emb = self.time_embed(time_interval)             # (B, D)
         emb_c = emb_c + t_emb.unsqueeze(1)
         emb_e = emb_e + t_emb.unsqueeze(1)
 
-        # Concatenate tokens
         tokens = torch.cat([emb_c, emb_e], dim=1)          # (B, L_c+L_e, D)
 
-        # Transformer
         x_trans = self.transformer(tokens)                 # (B, L_total, D)
 
-        # Project to patches
         L_c = emb_c.shape[1]
         patches_c = self.head_cerra(x_trans[:, :L_c, :])   # (B, L_c, p_c^2)
-        # era patches (optional, not used for output reconstruction)
-        # patches_e = self.head_era(x_trans[:, L_c:, :])   # (B, L_e, p_e^2)
 
-        # Reconstruct cerra output
         out = self.unpatchify(patches_c)                   # (B, V, H_c, W_c)
         return out

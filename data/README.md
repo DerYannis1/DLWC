@@ -1,4 +1,4 @@
-Hier werden die Test-Daten gespeichert, wenn man "reshape_and_norm.py" ausführt.
+Hier werden die Test- und Trainings-Daten gespeichert, wenn man "reshape_and_norm.py" ausführt.
 
 
 Beispielausführung von ```reshape_and_norm.py```:
